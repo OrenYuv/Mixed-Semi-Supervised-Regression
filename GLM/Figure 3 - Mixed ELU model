@@ -640,29 +640,30 @@ for i in range(Samp_size):
     if ((n-1)/n)*test_Fs2[i,sig]<test_sigs3[i,sig]:
       test_Hyb2[i,sig]=test_semi2[i,sig]
 
+### Plotting:
+
+x2=sig_vals**2
+
+y21=np.nanmean(test_sup,0)-Rb
+y22=np.mean(test_semi1,0)-Rb
+
+y23=np.mean(test_semi2,0)-Rb
+
+y24=np.mean(test_Hyb,0)-Rb
 
 
-alpha_Ob=Oracle_alpha_vals_b[sigChoos]
-alpha_BetaLM_O=Alpha_BetaLM_O_vals[sigChoos]
-RbM=y25[sigChoos]
-RbMstar=y26[sigChoos]
-RbLM=y28[sigChoos]
-RbLMstar=y29[sigChoos]
-RbetaHat=y21[sigChoos]
-RbetaBreve=y23[sigChoos]
+y25=np.mean(test_Mixed2,0)-Rb
+y26=np.mean(test_MOb,0)-Rb
+
+y27=np.mean(test_L_Mixed,0)-Rb
 
 
-#### Plotting:
+y28=np.mean(test_mixed_Breve_ExactEst,0)-Rb
 
-x3=alpha_vals
-x3=np.concatenate( (np.reshape(0,(1)),x3,np.reshape(1,(1))),axis=0)
-
-y31=np.mean(test_All_Alphas_1,0)-Rb
-y31=np.concatenate( (np.reshape(RbetaHat,(1)),y31,np.reshape(RbetaBreve,(1))),axis=0)
+y29=np.mean(test_mixed_Breve_Exact_Oracle,0)-Rb
 
 
-y32=np.mean(test_All_Alphas_2,0)-Rb
-y32=np.concatenate( (np.reshape(RbetaHat,(1)),y32,np.reshape(RbetaBreve,(1))),axis=0)
+
 
 nullerrs=np.mean(test_null,0)-Rb
 nullerr= nullerrs[0]  #R0-Rb
@@ -672,55 +673,30 @@ s3=15
 s4=20
 fig= plt.figure(figsize=(15,8))
 
-
-
-ax = fig.add_subplot(111)
 plt.xticks(fontsize=s3)
 plt.yticks(fontsize=s3)
 
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+plt.plot(x2,y21,'ro--', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y23,'bo--', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y24,'yo--', linewidth=s1, markersize=s2)
 
 
-plt.plot(x3,y31,'-',color='deeppink', linewidth=s1, markersize=s2)
+plt.plot(x2,y25,'o--',color='pink', linewidth=s1, markersize=s2)
+plt.plot(x2,y26,'x--',color='darkgray', linewidth=s1, markersize=s2)
 
-plt.plot(x3,y32,'-',color='gold', linewidth=s1, markersize=s2)
+plt.plot(x2,y27,'o--',color='lightgreen', linewidth=s1, markersize=s2)
 
-plt.axhline(y=RbM,linewidth=s1+1, color='pink',linestyle='-.')
-plt.axhline(y=RbLM,linewidth=s1+1, color='orange',linestyle='-.', )
+plt.plot(x2,y28,'o--',color='orange', linewidth=s1, markersize=s2)
 
-plt.axhline(y=RbMstar,linewidth=s1, color='gray',linestyle='--')
-
-plt.axhline(y=RbLMstar,linewidth=s1, color='black',linestyle='--')
-
-
-
-
-plt.axvline(x=alpha_Ob,linewidth=3, color='aqua',linestyle=':')
-
-plt.axvline(x=alpha_BetaLM_O,linewidth=3, color='aqua',linestyle=':')
-
-
-
-mx=x3[-1]
-mn=x3[0]
-adotx=(alpha_Ob-mn)/(mx-mn)-0.04
-ax.text(adotx, 0, r'$\dot{\alpha}$',
-        verticalalignment='bottom',
-        transform=ax.transAxes,
-        color='aqua', fontsize=25)
-
-
-
-addotx=(alpha_BetaLM_O-mn)/(mx-mn)-0.02
-ax.text(addotx, 0, r'$\ddot{\alpha}$',
-        verticalalignment='bottom',
-        transform=ax.transAxes,color='aqua', fontsize=25)
+plt.plot(x2,y29,'x--',color='black', linewidth=s1, markersize=s2)
 
 
 plt.xlabel(r'$\sigma^2$', fontsize=s4)
-plt.legend( [r'$R(\dot{\beta}_{\alpha})$', r'$R(\ddot{\beta}_{\alpha})$' , r'$R(\dot{\beta}_{\hat{\alpha}})$' , r'$R(\ddot{\beta}_{\tilde{\alpha}})$', r'$R(\dot{\beta}_{\dot{\alpha}})$', r'$R(\ddot{\beta}_{\ddot{\alpha}})$'],   fontsize=s4)
+plt.legend( [r'$R(\hat{\beta})$', r'$R(\breve{\beta})$', r'$R(\beta^D)$', r'$R(\dot{\beta}_{\hat{\alpha}})$', r'$R(\dot{\beta}_{\dot{\alpha}})$', r'$R(\ddot{\beta}_{\hat{\alpha}})$', r'$R\ddot{\beta}_{\tilde{\alpha}})$', r'$R(\ddot{\beta}_{\ddot{\alpha}})$'],   fontsize=s4)
 
+plt.title('Mixed Semi-Supervised Regression with ELU link, p='+str(p)+ ' n='+str(n) , fontsize=25 )
 
-
-plt.xlabel(r'$\sigma^2$', fontsize=s4)
-
-plt.title('Mixed Semi-Supervised Regression with ELU link, p=10, n=50, '+r'$\sigma^2$'+'=25' , fontsize=23 )
