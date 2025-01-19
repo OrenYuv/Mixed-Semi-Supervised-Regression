@@ -1,1 +1,239 @@
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import norm
+from scipy.stats import t
+from scipy.stats import uniform
+
+rng = default_rng()
+
+import matplotlib.pyplot as plt
+
+
+### Setting:
+n_vals=np.array((20,30,50,80,120,170,230,300,390,500)) #,390,500
+n_lev=n_vals.shape[0]
+N=10**5
+gam=0.5
+sige=5
+tau=1
+
+Dv=gam**2/(1-gam)
+Bu=gam*sige**2
+
+for nl in range(n_lev):
+  n=n_vals[nl]
+  p=int(gam*n)
+  P_Fac=(sige**2)/p
+
+  mu=np.zeros(p)
+  rho=0 #0.9
+  Sigma=np.zeros((p,p))
+  r = 5 #number of blocks
+  block = p/r #size of a block
+
+  for j in range(r):
+      i0 = j*block
+      i1 = (j+1)*block-1
+      i0=int(i0)
+      i1=int(i1)
+      Sigma[i0:i1+1,i0:i1+1] = rho
+
+
+  Sigma=(Sigma+np.eye(p)*(1-rho))*P_Fac
+  SigTr=Sigma.trace()
+
+
+n_vals=np.array((20,30,50,80,120,170,230,300,390,500)) #,390,500
+n_lev=n_vals.shape[0]
+N=10**5
+gam=0.5
+sige=5
+tau=1
+
+Samp_size= 1*10**4
+
+Dv=gam**2/(1-gam)
+Bu=gam*sige**2
+
+a_star_Opt=(sige**2)*Dv/((sige**2)*Dv+ tau**2*Bu  )
+
+test_sup=np.empty((Samp_size,n_lev))
+
+test_Mixed=np.empty((Samp_size,n_lev))
+test_Mixed2=np.empty((Samp_size,n_lev))
+
+test_Mixed_semi=np.empty((Samp_size,n_lev))
+test_Mixed_semi2=np.empty((Samp_size,n_lev))
+
+test_MixedOpt=np.empty((Samp_size,n_lev))
+test_MixedOpt2=np.empty((Samp_size,n_lev))
+
+test_sigs1=np.empty((Samp_size,n_lev))
+test_tau1=np.empty((Samp_size,n_lev))
+
+
+for nl in range(n_lev):
+  n=n_vals[nl]
+  p=int(gam*n)
+  P_Fac=(sige**2)/p
+
+  mu=np.zeros(p)
+  rho=0.9
+  Sigma=np.zeros((p,p))
+  r = 5 #number of blocks
+  block = p/r #size of a block
+
+  for j in range(r):
+      i0 = j*block
+      i1 = (j+1)*block-1
+      i0=int(i0)
+      i1=int(i1)
+      Sigma[i0:i1+1,i0:i1+1] = rho
+
+
+  Sigma=(Sigma+np.eye(p)*(1-rho))*P_Fac
+
+  Xst = rng.multivariate_normal(mu,Sigma,N)
+  Sigma1= Xst.transpose()@Xst/N
+  Sigma1_inv=np.linalg.inv(Sigma1)
+  ones_n=np.ones((n,1))
+  X_m=np.zeros((p,1))
+
+
+##################### Unsupervised estimation: #############################
+  B=0
+  V=0
+  Ip=np.eye(p)
+  for i in range(Samp_size):
+    tr_id=rng.choice(range(N),size=n, replace=False)
+    X = Xst[tr_id,:]
+    HQ_mat=n*Sigma1@np.linalg.inv((X.transpose())@X )
+    V=V+HQ_mat.trace()
+    HH2_mat=(Sigma1_inv/n)@(X.transpose())@X@(X.transpose())@X-n*Sigma1
+    B=B+HH2_mat.trace()
+    Hb=(X.transpose())@X/n
+
+
+  V=(V/Samp_size)/n
+  B=(B/Samp_size)/n
+
+################# Full simulation:
+  e=np.zeros( (n,1))
+  B_b=(1-1/n)*(1-1/(n*(p+1)))*B
+  V_b=(1-1/n)*gam
+  a_star_Opt2=(sige**2)*(V-gam)/((sige**2)*(V-gam)+ tau**2*B  )
+
+  Ip=np.eye(p)
+
+  for i in range(Samp_size):
+    tr_id=rng.choice(range(N),size=n, replace=False)
+    beta=(rng.multivariate_normal(mu,np.eye(p),1).transpose())*tau
+
+    mtes=Xst@beta
+    X = rng.multivariate_normal(mu,Sigma,n) # Xst[tr_id,:]
+    ymeans=X@beta
+
+    e[:,0]=rng.standard_normal(n)
+    y=ymeans+e*sige
+
+    yh_null=np.mean(y)
+
+############# supervised OLS:
+    beta_OLS=np.linalg.inv((X.transpose())@X )@(X.transpose())@y
+
+############# Semi-supervised_Tilde:
+    beta_SOLS1=Sigma1_inv@(X.transpose())@y/n
+
+############# Semi-supervised_Breve:
+    X_m[:,0]=np.mean(X,0)
+    mean_mat=(ones_n)@(X_m.transpose())
+    cov_Xy=( (X-mean_mat).transpose())@( y-np.mean(y) )/n
+
+
+    beta_SOLS2=Sigma1_inv@cov_Xy
+
+################################ Estimating Noise:
+    RSS=np.sum( (X@beta_OLS-y)**2 )
+    sig_h=RSS/(n-p)
+    test_sigs1[i,nl]=sig_h
+
+################################ Estimating Signal:
+    tau_h=np.maximum( (np.mean(y**2)-sig_h)/Sigma1.trace() ,0.01)
+    test_tau1[i,nl]=tau_h
+
+    ############## alpha_star Rs:
+    a_star=sig_h*Dv/(sig_h*Dv+ tau_h*Bu )
+
+    a_star_b=sig_h*(V-V_b)/(sig_h*(V-V_b)+ tau_h*B_b  )
+
+    a_star_semi=sig_h*Dv/(sig_h*Dv+ tau**2*Bu )
+    a_star_semi2=sig_h*(V-V_b)/(sig_h*(V-V_b)+ tau**2*B_b  )
+    #a_star_Opt=(sige**2)*(V-gam)/((sige**2)*(V-gam)+ 1*B  )
+
+    ##############################
+
+    test_sup[i,nl]=np.mean( (Xst@beta_OLS -  mtes)**2 )
+
+    test_Mixed[i,nl]=np.mean( (Xst@(a_star*beta_SOLS2+(1-a_star)*beta_OLS) -  mtes)**2 )
+    test_Mixed2[i,nl]=np.mean( (Xst@(a_star_b*beta_SOLS2+(1-a_star_b)*beta_OLS) -  mtes)**2 )
+
+    test_Mixed_semi[i,nl]=np.mean( (Xst@(a_star_semi*beta_SOLS2+(1-a_star_semi)*beta_OLS) -  mtes)**2 )
+    test_Mixed_semi2[i,nl]=np.mean( (Xst@(a_star_semi2*beta_SOLS2+(1-a_star_semi2)*beta_OLS) -  mtes)**2 )
+
+    test_MixedOpt[i,nl]=np.mean( (Xst@(a_star_Opt*beta_SOLS2+(1-a_star_Opt)*beta_OLS) -  mtes)**2 )
+    test_MixedOpt2[i,nl]=np.mean( (Xst@(a_star_Opt2*beta_SOLS2+(1-a_star_Opt2)*beta_OLS) -  mtes)**2 )
+
+
+    if i%1000==999:
+      print(i+1,'samples so far')
+
+
+
+
+
+#### Plotting:
+x2=n_vals
+
+y21=np.mean(test_MixedOpt,0)/np.mean(test_sup,0)
+y22=np.mean(test_MixedOpt2,0)/np.mean(test_sup,0)
+
+y23=np.mean(test_Mixed,0)/np.mean(test_sup,0)
+y24=np.mean(test_Mixed2,0)/np.mean(test_sup,0)
+
+y25= np.mean(test_Mixed_semi,0)/np.mean(test_sup,0)            #np.mean(test_sup-test_Mixed_semi,0)
+y26= np.mean(test_Mixed_semi2,0)/np.mean(test_sup,0)            #np.mean(test_sup-test_Mixed_semi2,0)
+
+t=((sige*gam)**2/(1-gam))**2/( (tau**2)*Bu+(sige*gam)**2/(1-gam) )
+
+s1=2
+s2=8.5
+s3=15
+s4=18
+fig= plt.figure(figsize=(15,8))
+
+plt.subplot(111)
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+plt.ylim((0.67,0.77))
+
+plt.plot(x2,y22,'ro--', linewidth=s1, markersize=s2)
+plt.plot(x2,y26,'x--',color='blue', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y24,'g^--', linewidth=s1, markersize=s2)
+
+eta_inf=1-gam**2
+eta_hat=1-(sige*(V-V_b))**2/(sige**2*V*(V-V_b)+tau**2*V*B_b)
+plt.axhline(y=eta_hat,linewidth=s1, color='gray', linestyle='dashed')
+plt.axhline(y=eta_inf,linewidth=s1, color='black', linestyle='dotted')
+
+
+plt.xlabel(r'$n$', fontsize=s4)
+plt.ylabel('Relative prediction error', fontsize=s4)
+
+plt.legend( [r'$r(\dot{\beta}_{\alpha^*})/r(\hat{\beta})$', r'$r(\dot{\beta}_{\hat{\alpha}(\tau)})/r(\hat{\beta})$', r'$r(\dot{\beta}_{\hat{\alpha}})/r(\hat{\beta})$',r'$\widehat{\eta}(n=500)$', r'$\eta{\infty}$'],   fontsize=s4)
+
+
+plt.title('Semi Supervised OLS, Random-'+r'$\beta,  \gamma = 0.5,  \sigma^2=\tau^2tr(\Sigma)=25$' , fontsize=25 )
+
+
 
