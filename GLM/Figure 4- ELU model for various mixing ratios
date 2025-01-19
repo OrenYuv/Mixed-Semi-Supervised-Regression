@@ -57,7 +57,7 @@ sig_vals=np.sqrt(np.arange(5,70,10))
 sig_lev=sig_vals.shape[0]
 
 ############################### Unsupervised Oracle estimation
-Samp_size=100 #5*10**3
+Samp_size=5*10**3
 ones_n=np.ones((n,1))
 X_m=np.zeros((p,1))
 
@@ -160,7 +160,7 @@ Oracle_alpha_vals_b=((sig_vals**2)*(Vl-Vs))/( (sig_vals**2)*(Vl+Vu-2*Vs )+ Bub )
 
 ################# Full simulation:
 
-Samp_size= 100 #4*10**3
+Samp_size= 4*10**3
 
 mini_samp=100
 maxIter=10
@@ -648,8 +648,7 @@ RbLMstar=y29[sigChoos]
 RbetaHat=y21[sigChoos]
 RbetaBreve=y23[sigChoos]
 
-
-#### Ploting:
+#### Plotting:
 
 x3=alpha_vals
 x3=np.concatenate( (np.reshape(0,(1)),x3,np.reshape(1,(1))),axis=0)
@@ -669,57 +668,55 @@ s3=15
 s4=20
 fig= plt.figure(figsize=(15,8))
 
-plt.xticks(fontsize=s3)
-plt.yticks(fontsize=s3)
 
 
 ax = fig.add_subplot(111)
 plt.xticks(fontsize=s3)
 plt.yticks(fontsize=s3)
 
-plt.plot(x3,y31,'o--',color='pink', linewidth=s1, markersize=s2)
-
-plt.plot(x3,y32,'o--',color='orange', linewidth=s1, markersize=s2)
-
-plt.axhline(y=RbM,linewidth=s1, color='pink',Linestyle='--')
-plt.axhline(y=RbLM,linewidth=s1, color='orange',Linestyle='--')
-
-plt.axhline(y=RbMstar,linewidth=s1, color='gray',Linestyle='--')
-
-plt.axhline(y=RbLMstar,linewidth=s1, color='black',Linestyle='--')
 
 
+plt.plot(x3,y31,'-',color='deeppink', linewidth=s1, markersize=s2)
+
+plt.plot(x3,y32,'-',color='gold', linewidth=s1, markersize=s2)
+
+plt.axhline(y=RbM,linewidth=s1+1, color='pink',linestyle='-.')
+plt.axhline(y=RbLM,linewidth=s1+1, color='orange',linestyle='-.', )
+
+plt.axhline(y=RbMstar,linewidth=s1, color='gray',linestyle='--')
+
+plt.axhline(y=RbLMstar,linewidth=s1, color='black',linestyle='--')
 
 
-plt.axvline(x=alpha_Ob,linewidth=s1, color='gray',Linestyle='--')
 
-plt.axvline(x=alpha_BetaLM_O,linewidth=s1, color='gray',Linestyle='--')
+
+plt.axvline(x=alpha_Ob,linewidth=3, color='aqua',linestyle=':')
+
+plt.axvline(x=alpha_BetaLM_O,linewidth=3, color='aqua',linestyle=':')
 
 
 
 mx=x3[-1]
 mn=x3[0]
-adotx=(alpha_Ob-mn)/(mx-mn)-0.05
+adotx=(alpha_Ob-mn)/(mx-mn)-0.04
 ax.text(adotx, 0, r'$\dot{\alpha}$',
         verticalalignment='bottom',
         transform=ax.transAxes,
-        color='black', fontsize=s4)
+        color='aqua', fontsize=25)
 
 
 
-addotx=(alpha_BetaLM_O-mn)/(mx-mn)-0.05
+addotx=(alpha_BetaLM_O-mn)/(mx-mn)-0.02
 ax.text(addotx, 0, r'$\ddot{\alpha}$',
         verticalalignment='bottom',
-        transform=ax.transAxes,
-        color='black', fontsize=s4)
+        transform=ax.transAxes,color='aqua', fontsize=25)
 
 
 plt.xlabel(r'$\sigma^2$', fontsize=s4)
-plt.legend( [r'$R(\dot{\beta}_{\alpha})$', r'$R(\ddot{\beta}_{\alpha})$' , r'$R(\dot{\beta}_{\hat{\alpha}})$' , r'$R(\ddot{\beta}_{\tilde{\alpha}})$', r'$R(\dot{\beta}_{\dot{\alpha}})$', r'$R(\ddot{\beta}_{\ddot{\alpha}})$'],   fontsize=s5)
+plt.legend( [r'$R(\dot{\beta}_{\alpha})$', r'$R(\ddot{\beta}_{\alpha})$' , r'$R(\dot{\beta}_{\hat{\alpha}})$' , r'$R(\ddot{\beta}_{\tilde{\alpha}})$', r'$R(\dot{\beta}_{\dot{\alpha}})$', r'$R(\ddot{\beta}_{\ddot{\alpha}})$'],   fontsize=s4)
 
 
 
 plt.xlabel(r'$\sigma^2$', fontsize=s4)
 
 plt.title('Mixed Semi-Supervised Regression with ELU link, p=10, n=50, '+r'$\sigma^2$'+'=25' , fontsize=23 )
-
