@@ -641,5 +641,67 @@ for i in range(Samp_size):
       test_Hyb2[i,sig]=test_semi2[i,sig]
 
 
+### Plotting:
+
+x2=sig_vals**2
+
+y21=np.nanmean(test_sup,0)-Rb
+y22=np.mean(test_semi1,0)-Rb
+
+y23=np.mean(test_semi2,0)-Rb
+
+y24=np.mean(test_Hyb,0)-Rb
+
+
+y25=np.mean(test_Mixed2,0)-Rb
+y26=np.mean(test_MOb,0)-Rb
+
+y27=np.mean(test_L_Mixed,0)-Rb
+
+
+y28=np.mean(test_mixed_Breve_ExactEst,0)-Rb
+
+y29=np.mean(test_mixed_Breve_Exact_Oracle,0)-Rb
+
+
+
+
+nullerrs=np.mean(test_null,0)-Rb
+nullerr= nullerrs[0]  #R0-Rb
+s1=2
+s2=7
+s3=15
+s4=20
+fig= plt.figure(figsize=(15,8))
+
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+plt.plot(x2,y21,'ro--', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y23,'bo--', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y24,'yo--', linewidth=s1, markersize=s2)
+
+
+plt.plot(x2,y25,'o--',color='pink', linewidth=s1, markersize=s2)
+plt.plot(x2,y26,'x--',color='darkgray', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y27,'o--',color='lightgreen', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y28,'o--',color='orange', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y29,'x--',color='black', linewidth=s1, markersize=s2)
+
+
+plt.xlabel(r'$\sigma^2$', fontsize=s4)
+plt.legend( [r'$R(\hat{\beta})$', r'$R(\breve{\beta})$', r'$R(\beta^D)$', r'$R(\dot{\beta}_{\hat{\alpha}})$', r'$R(\dot{\beta}_{\dot{\alpha}})$', r'$R(\ddot{\beta}_{\hat{\alpha}})$', r'$R\ddot{\beta}_{\tilde{\alpha}})$', r'$R(\ddot{\beta}_{\ddot{\alpha}})$'],   fontsize=s4)
+
+plt.title('Mixed Semi-Supervised Regression with ELU link, p='+str(p)+ ' n='+str(n) , fontsize=25 )
+
+
+
 
 
