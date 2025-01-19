@@ -57,7 +57,7 @@ sig_vals=np.sqrt(np.arange(5,70,10))
 sig_lev=sig_vals.shape[0]
 
 ############################### Unsupervised Oracle estimation
-Samp_size=100 #5*10**3
+Samp_size=5*10**3
 ones_n=np.ones((n,1))
 X_m=np.zeros((p,1))
 
@@ -160,7 +160,7 @@ Oracle_alpha_vals_b=((sig_vals**2)*(Vl-Vs))/( (sig_vals**2)*(Vl+Vu-2*Vs )+ Bub )
 
 ################# Full simulation:
 
-Samp_size= 100 #4*10**3
+Samp_size= 4*10**3
 
 mini_samp=100
 maxIter=10
