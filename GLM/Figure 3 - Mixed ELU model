@@ -8,4 +8,638 @@ rng = default_rng()
 
 import matplotlib.pyplot as plt
 
+########### Setting:
+p=10
+n=50
+N=5*10**4
+
+
+mu=np.zeros(p)
+rho=0.9
+Sigma=np.zeros((p,p))
+r = 5 #number of blocks
+block = p/r #size of a block
+
+for j in range(r):
+    i0 = j*block
+    i1 = (j+1)*block-1
+    i0=int(i0)
+    i1=int(i1)
+    Sigma[i0:i1+1,i0:i1+1] = rho
+
+
+Sigma=Sigma+np.eye(p)*(1-rho)
+
+Xst = rng.multivariate_normal(mu,Sigma,N)
+Sigma1= Xst.transpose()@Xst/N
+Sigma1_inv=np.linalg.inv(Sigma1)
+
+
+############ Definition for the Link Function
+a=1
+
+
+def g(z):
+    return z*(z>0)+(z<0)*a*(np.exp(z/a)-1)
+
+def g_inv(z):
+    return z*(z>0)+(z<0)*a*np.log(z/a+1)
+
+def g_tag(z):
+    return 1*(z>0)+(z<0)*np.exp(z/a)
+
+def G(z):
+    return (z>0)*0.5*z**2+(z<0)*(a**2)*(np.exp(z/a)-z/a-1)
+
+b=2
+
+sig_vals=np.sqrt(np.arange(5,70,10))
+sig_lev=sig_vals.shape[0]
+
+############################### Unsupervised Oracle estimation
+Samp_size=100 #5*10**3
+ones_n=np.ones((n,1))
+X_m=np.zeros((p,1))
+
+Zst=b*np.sum(Xst,1)
+mtes=g(Zst)
+dtes=g_tag(Zst)
+mu0=np.mean(mtes)
+
+Rb= np.mean( G(Zst)-mtes*Zst )
+Rb= np.mean( G(Zst)-mtes*Zst )
+
+D=np.diag(dtes)
+H_mat=(Xst.transpose())@D@Xst*(n/N)
+H_mat_inv=np.linalg.inv(H_mat)
+Vu= ((H_mat_inv@Sigma1).trace())*n
+
+Vmean=(Xst.transpose())@mtes*(n/N)
+Bu1=(Vmean.transpose())@H_mat_inv@Vmean
+
+Vl=0
+Vs=0
+V_mat=np.zeros((p,Samp_size))
+C_mat=np.zeros((p,Samp_size))
+Bu2=0
+
+step=0.05
+alpha_vals=np.arange(step,1,step)
+alpha_lev=alpha_vals.shape[0]
+Bddot=np.zeros(alpha_lev)
+Vddot=np.zeros(alpha_lev)
+
+for i in range(Samp_size):
+    tr_id=rng.choice(range(N),size=n, replace=False)
+    X = Xst[tr_id,:]
+    mu_z=mtes[tr_id]
+    d_z=dtes[tr_id]
+    D_z=np.diag(d_z)
+
+    mat0=(X.transpose())@D_z@X
+    mat1=np.linalg.inv(mat0 )
+    mat2=mat1@(X.transpose())@X@mat1@H_mat
+    Vl+=(mat2.trace())
+
+    mat3=(X.transpose())@X@mat1
+    Vs+=(mat3.trace())
+
+    vz=(X.transpose())@mu_z
+    V_mat[:,i]=vz
+
+    X_m[:,0]=np.mean(X,0)
+    mean_mat=(ones_n)@(X_m.transpose())
+
+    C_mat[:,i]=( (X-mean_mat).transpose())@( mu_z-np.mean(mu_z) )
+
+    Bu2+=(vz.transpose())@H_mat_inv@vz
+
+    Hb=(X.T)@X
+    Vdiff=np.reshape(Vmean-(X.transpose())@mu_z,(p,1))
+    Vdiff2=Vdiff@(Vdiff.T)
+    for j in range(alpha_lev):
+      alpha_t=alpha_vals[j]
+      Sa=np.linalg.inv( (1-alpha_t)*mat0 + alpha_t*H_mat)
+      matB=Sa@H_mat@Sa@Vdiff2
+      Bddot[j]+=(alpha_t**2)*(matB.trace())
+
+      matV=H_mat@Sa@Hb@Sa
+      Vddot[j]+=matV.trace()
+
+
+Vddot=Vddot/Samp_size
+Bddot=Bddot/Samp_size
+Bu2=Bu2/Samp_size
+
+mat4=H_mat_inv@(np.cov(V_mat))
+Bu=mat4.trace()
+
+mat4b=H_mat_inv@(np.cov(C_mat))
+Bub=mat4b.trace()
+
+
+Vl=Vl/Samp_size
+Vs=Vs/Samp_size
+
+
+
+Oracle_alpha_vals=((sig_vals**2)*(Vl-Vs))/( (sig_vals**2)*(Vl+Vu-2*Vs )+ Bu )
+R_BetaM_O_vals=(Oracle_alpha_vals**2)*((sig_vals**2)*(Vl+Vu-2*Vs )+ Bu)-2*Oracle_alpha_vals*(sig_vals**2)*(Vl-Vs)+(sig_vals**2)*Vl
+R_BetaM_O_vals/=(2*n)
+
+R_BetaLM_O_vals=np.empty(sig_lev)
+Alpha_BetaLM_O_vals=np.empty(sig_lev)
+for sig in range(sig_lev):
+  sige=sig_vals[sig]
+  Rvals=((sige**2)*Vddot+Bddot)/(2*n)
+  R_BetaLM_O_vals[sig]=np.min(Rvals)
+  Alpha_BetaLM_O_vals[sig]=alpha_vals[np.argmin(Rvals)]
+
+
+Oracle_alpha_vals_b=((sig_vals**2)*(Vl-Vs))/( (sig_vals**2)*(Vl+Vu-2*Vs )+ Bub )
+
+################# Full simulation:
+
+Samp_size= 100 #4*10**3
+
+mini_samp=100
+maxIter=10
+StopCrit=0.001
+M=5000
+
+ones_M=np.ones((M,1))
+X0_m=np.zeros((p,1))
+
+sigChoos=2
+
+test_sup=np.empty((Samp_size,sig_lev))
+test_semi1=np.empty((Samp_size,sig_lev))
+test_semi2=np.empty((Samp_size,sig_lev))
+
+test_null=np.empty((Samp_size,sig_lev))
+
+test_Hyb=np.empty((Samp_size,sig_lev))
+test_Hyb2=np.empty((Samp_size,sig_lev))
+
+test_Mixed1=np.empty((Samp_size,sig_lev))
+test_alpha_star=np.empty((Samp_size,sig_lev))
+
+test_Mixed2=np.empty((Samp_size,sig_lev))
+test_alpha_star2=np.empty((Samp_size,sig_lev))
+
+test_Mixed3=np.empty((Samp_size,sig_lev))
+test_L_Mixed=np.empty((Samp_size,sig_lev))
+
+test_Fs1=np.empty((Samp_size,sig_lev))
+test_Fs2=np.empty((Samp_size,sig_lev))
+test_Fs3=np.empty((Samp_size,sig_lev))
+
+test_sigs1=np.empty((Samp_size,sig_lev))
+test_sigs2=np.empty((Samp_size,sig_lev))
+test_sigs3=np.empty((Samp_size,sig_lev))
+
+test_MOb=np.empty((Samp_size,sig_lev))
+test_MO=np.empty((Samp_size,sig_lev))
+
+
+test_All_Alphas_1=np.empty((Samp_size,alpha_lev))
+test_All_Alphas_2=np.empty((Samp_size,alpha_lev))
+
+
+test_mixed_Breve_ExactEst=np.empty((Samp_size,sig_lev))
+test_mixed_Breve_Exact_Oracle=np.empty((Samp_size,sig_lev))
+#################################################### Main Loop
+
+
+for i in range(Samp_size):
+  tr_id=rng.choice(range(N),size=n, replace=False)
+  tr_id_s=rng.choice(range(N),size=M, replace=False)
+
+  X = Xst[tr_id,:]
+  X0= Xst[tr_id_s,:]
+  ymeans=mtes[tr_id]
+
+
+
+  for sig in range(sig_lev):
+    sige=sig_vals[sig]
+    y=ymeans + rng.standard_normal(n)*sige
+    yh_null=np.mean(y)
+
+    alpha_O=Oracle_alpha_vals[sig]
+    alpha_Ob=Oracle_alpha_vals_b[sig]
+    alpha_LM_O=Alpha_BetaLM_O_vals[sig]
+
+    #beta0=np.random.rand(p)+b-0.5
+    beta0=np.zeros(p)+b
+
+############# supervised Newton-Raphson:
+    beta_OLS=beta0
+    j=1
+    zvec=X@beta_OLS
+    D_n=np.diag(g_tag(zvec))
+    S=(X.transpose())@(y-g(zvec))
+    H=-(X.transpose())@D_n@X
+    norm=np.linalg.norm(S,2)
+    while j<maxIter and norm>StopCrit:
+      beta_OLS=beta_OLS-(np.linalg.inv(H))@S
+      zvec=X@beta_OLS
+
+      D_n=np.diag(g_tag(zvec))
+      S=(X.transpose())@(y-g(zvec))
+      H=-(X.transpose())@D_n@X
+      norm=np.linalg.norm(S,2)
+
+      j+=1
+
+############# Semi-supervised_Tilde Newton-Raphson:
+    beta_SOLS1=beta0
+    j=1
+    zvec=X0@beta_SOLS1
+    D_M=np.diag(g_tag(zvec))
+    S=(X.transpose())@y/n - (X0.transpose())@g(zvec)/M
+    H=-(X0.transpose())@D_M@X0/M
+    norm=np.linalg.norm(S,2)
+    while j<maxIter and norm>StopCrit:
+      beta_SOLS1=beta_SOLS1- (np.linalg.inv(H))@S
+      zvec=X0@beta_SOLS1
+
+      D_M=np.diag(g_tag(zvec))
+      S=(X.transpose())@y/n - (X0.transpose())@g(zvec)/M
+      H=-(X0.transpose())@D_M@X0/M
+      norm=np.linalg.norm(S,2)
+
+      j+=1
+
+############# Semi-supervised_Breve Newton-Raphson:
+    beta_SOLS2=beta0
+    j=1
+    zvec=X0@beta_SOLS2
+    D_M=np.diag(g_tag(zvec))
+
+    X_m[:,0]=np.mean(X,0)
+    mean_mat=(ones_n)@(X_m.transpose())
+    cov_Xy=( (X-mean_mat).transpose())@( y-np.mean(y) )/n
+
+    S= cov_Xy - (X0.transpose())@g(zvec)/M
+    H=-(X0.transpose())@D_M@X0/M
+    norm=np.linalg.norm(S,2)
+    while j<maxIter and norm>StopCrit:
+      beta_SOLS2=beta_SOLS2-(np.linalg.inv(H))@S
+      zvec=X0@beta_SOLS2
+
+      D_M=np.diag(g_tag(zvec))
+      S=cov_Xy - (X0.transpose())@g(zvec)/M
+      H=-(X0.transpose())@D_M@X0/M
+      norm=np.linalg.norm(S,2)
+
+      j+=1
+
+################################ Estimating sigma^2:
+
+    zh=X@beta_OLS
+    yh=g(zh)
+    RSS=np.sum( (yh-y)**2 )
+
+    ########### estimating t-values:
+    Z_b=X0@beta_SOLS2
+    mtes_b=g(Z_b)
+    dtes_b=g_tag(Z_b)
+    mu0_b=np.mean(mtes_b)
+
+    D_b=np.diag(dtes_b)
+
+    H_mat_b=(X0.transpose())@D_b@X0*(n/M)
+
+    H_mat_inv_b=np.linalg.inv(H_mat_b)
+
+    Sigma1_b=X0.transpose()@X0/M
+
+    t1_b= ((H_mat_inv_b@Sigma1_b).trace())*n
+
+    Xmu_e=(X0.transpose())@mtes_b*(n/M)
+
+    t22_b=(Xmu_e.transpose() )@H_mat_inv_b@Xmu_e
+
+    tsig_b=0
+    t21_b=0
+    V0=0
+
+    Q=np.zeros((p,p))
+    HD=np.zeros((p,p))
+
+    Bddot=np.zeros(alpha_lev)
+    Vddot=np.zeros(alpha_lev)
+
+    for k in range(mini_samp):
+      #tr_id_b=rng.choice(range(N),size=n, replace=False)
+      #Xb = Xst[tr_id_b,:]
+      tr_id_b=rng.choice(range(M),size=n, replace=False)
+      Xb = X0[tr_id_b,:]
+
+      zvec_b=Xb@beta_SOLS2             ####### ???? beta_SOLS2 ?
+      D_b=np.diag(g_tag(zvec_b))
+      mu_b=g(zvec_b)
+      mat0=(Xb.transpose())@D_b@Xb
+      mat1=np.linalg.inv(mat0 )
+      mat2=mat1@(Xb.transpose())@Xb@mat1
+      mat3=mat2@(Xb.transpose())@D_b@D_b@Xb
+
+      V0+=((Xb.transpose())@Xb@mat1).trace()
+
+      Q+=mat2
+      HD+=mat0@H_mat_inv_b@mat0
+      tsig_b+=mat3.trace()
+
+      vz=(Xb.transpose())@mu_b
+      t21_b+=(vz.transpose())@H_mat_inv_b@vz
+
+      Hb=(Xb.T)@Xb
+      Vdiff=np.reshape(Xmu_e-vz,(p,1))
+      Vdiff2=Vdiff@(Vdiff.T)
+      for alph in range(alpha_lev):
+        alpha_t=alpha_vals[alph]
+        Sa=np.linalg.inv( (1-alpha_t)*mat0 + alpha_t*H_mat_b)
+        matB=Sa@H_mat_b@Sa@Vdiff2
+        Bddot[alph]+=(alpha_t**2)*(matB.trace())
+
+        matV=H_mat_b@Sa@Hb@Sa
+        Vddot[alph]+=matV.trace()
+
+
+    Vddot=Vddot/mini_samp
+    Bddot=Bddot/mini_samp
+
+
+
+    V0=V0/mini_samp
+    Q=Q/mini_samp
+    HD=HD/mini_samp
+
+    HDH=HD-H_mat_b
+    t21_b=t21_b/mini_samp
+
+    t0_b=(H_mat_b@Q).trace()
+
+    tsig_b=tsig_b/mini_samp
+    sig_h=RSS/(n-2*p+tsig_b)
+    test_sigs3[i,sig]=sig_h
+
+    ############## Estimating F:
+    cor_mat=  HDH@Q
+    test_Fs1[i,sig]= ( t21_b-t22_b  -sig_h*(cor_mat.trace()) )/(t0_b-((n-1)/n)*t1_b)
+
+    alpha_star=(sig_h*(t0_b-((n-1)/n)*V0))/( sig_h*(t0_b+((n-1)/n)*(t1_b-2*V0))+ ( t21_b-t22_b  -sig_h*(cor_mat.trace()) ) )
+    alpha_star=np.maximum( np.minimum(1,alpha_star),0.01)
+
+    cor_mat=  HDH@H_mat_inv_b
+    test_Fs2[i,sig]= ( t21_b-t22_b  -sig_h*(cor_mat.trace()) )/(t0_b-((n-1)/n)*t1_b)
+
+    alpha_star2=(sig_h*(t0_b-((n-1)/n)*V0))/( sig_h*(t0_b+((n-1)/n)*(t1_b-2*V0))+ ( t21_b-t22_b  -sig_h*(cor_mat.trace()) ) )
+    alpha_star2=np.maximum( np.minimum(1,alpha_star2),0.01)
+
+    ##############################
+
+
+    z_OLS=Xst@beta_OLS
+    z_SOLS1=Xst@beta_SOLS1
+    z_SOLS2=Xst@beta_SOLS2
+
+    betaM=(1-alpha_star)*beta_OLS+alpha_star*beta_SOLS2
+    zM=Xst@betaM
+
+    test_sup[i,sig]=np.mean( G(z_OLS)-  mtes*z_OLS )
+    test_semi1[i,sig]=np.mean( G(z_SOLS1)-  mtes*z_SOLS1 )
+    test_semi2[i,sig]=np.mean( G(z_SOLS2)-  mtes*z_SOLS2 )
+
+    test_Mixed1[i,sig]=np.mean( G(zM)-  mtes*zM )
+    test_alpha_star[i,sig]=alpha_star
+
+    test_null[i,sig]=G(g_inv(yh_null))-g_inv(yh_null)*mu0
+
+
+    betaM2=(1-alpha_star2)*beta_OLS+alpha_star2*beta_SOLS2
+    zM2=Xst@betaM2
+    test_Mixed2[i,sig]=np.mean( G(zM2)-  mtes*zM2 )
+    test_alpha_star2[i,sig]=alpha_star2
+
+    #muM3=(1-alpha_star)*g(z_OLS)+alpha_star*g(z_SOLS2)
+    #zM3=g_inv(muM3+0.00001)
+    #test_Mixed3[i,sig]=np.mean( G(zM3)-  mtes*zM3 )
+
+    betaMO=(1-alpha_O)*beta_OLS+alpha_O*beta_SOLS2
+    zMO=Xst@betaMO
+    test_MO[i,sig]=np.mean( G(zMO)-  mtes*zMO )
+
+    betaMOb=(1-alpha_Ob)*beta_OLS+alpha_Ob*beta_SOLS2
+    zMOb=Xst@betaMOb
+    test_MOb[i,sig]=np.mean( G(zMOb)-  mtes*zMOb )
+
+############# Mixed Newton-Raphson (BREVE) with alpha for \dot{\beta}:
+    beta_L_M=beta0
+    j=1
+    zvec_n=X@beta_L_M
+    D_n=np.diag(g_tag(zvec_n))
+    S_l=(X.transpose())@(y-g(zvec_n))
+    H_l=-(X.transpose())@D_n@X
+
+    zvec_m=X0@beta_L_M
+    D_M=np.diag(g_tag(zvec_m))
+    S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+    H_u=-(X0.transpose())@D_M@X0/M
+
+    S=alpha_star2*S_u+ (1-alpha_star2)*S_l/n
+    H=alpha_star2*H_u+ (1-alpha_star2)*H_l/n
+
+    norm=np.linalg.norm(S,2)
+    while j<maxIter and norm>StopCrit:
+      beta_L_M=beta_L_M-(np.linalg.inv(H))@S
+
+      zvec_n=X@beta_L_M
+      D_n=np.diag(g_tag(zvec_n))
+      S_l=(X.transpose())@(y-g(zvec_n))
+      H_l=-(X.transpose())@D_n@X
+
+      zvec_m=X0@beta_L_M
+      D_M=np.diag(g_tag(zvec_m))
+      S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+      H_u=-(X0.transpose())@D_M@X0/M
+
+      S=alpha_star2*S_u+ (1-alpha_star2)*S_l/n
+      H=alpha_star2*H_u+ (1-alpha_star2)*H_l/n
+
+      norm=np.linalg.norm(S,2)
+
+      j+=1
+ ###############
+
+    z_L_M=Xst@beta_L_M
+    test_L_Mixed[i,sig]=np.mean( G(z_L_M)-  mtes*z_L_M )
+
+
+
+############# Mixed Newton-Raphson (BREVE) with alpha for \Ddot{\beta} - Estimated:
+    Rvals_h=(sig_h)*Vddot+Bddot
+    alpha_ExactEst=alpha_vals[np.argmin(Rvals_h)]
+    beta_mixed_Breve_ExactEst=beta0
+    j=1
+    zvec_n=X@beta_mixed_Breve_ExactEst
+    D_n=np.diag(g_tag(zvec_n))
+    S_l=(X.transpose())@(y-g(zvec_n))
+    H_l=-(X.transpose())@D_n@X
+
+    zvec_m=X0@beta_mixed_Breve_ExactEst
+    D_M=np.diag(g_tag(zvec_m))
+    S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+    H_u=-(X0.transpose())@D_M@X0/M
+
+    S=alpha_ExactEst*S_u+ (1-alpha_ExactEst)*S_l/n
+    H=alpha_ExactEst*H_u+ (1-alpha_ExactEst)*H_l/n
+
+    norm=np.linalg.norm(S,2)
+    while j<maxIter and norm>StopCrit:
+      beta_mixed_Breve_ExactEst=beta_mixed_Breve_ExactEst-(np.linalg.inv(H))@S
+
+      zvec_n=X@beta_mixed_Breve_ExactEst
+      D_n=np.diag(g_tag(zvec_n))
+      S_l=(X.transpose())@(y-g(zvec_n))
+      H_l=-(X.transpose())@D_n@X
+
+      zvec_m=X0@beta_mixed_Breve_ExactEst
+      D_M=np.diag(g_tag(zvec_m))
+      S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+      H_u=-(X0.transpose())@D_M@X0/M
+
+      S=alpha_ExactEst*S_u+ (1-alpha_ExactEst)*S_l/n
+      H=alpha_ExactEst*H_u+ (1-alpha_ExactEst)*H_l/n
+
+      norm=np.linalg.norm(S,2)
+
+      j+=1
+
+    z_L_M_ExactEst=Xst@beta_mixed_Breve_ExactEst
+    test_mixed_Breve_ExactEst[i,sig]=np.mean( G(z_L_M_ExactEst)-  mtes*z_L_M_ExactEst )
+
+###############################
+############# Mixed Newton-Raphson (BREVE) with alpha for \Ddot{\beta} - Oracle:
+    beta_mixed_Breve_Exact_Oracle=beta0
+    j=1
+    zvec_n=X@beta_mixed_Breve_Exact_Oracle
+    D_n=np.diag(g_tag(zvec_n))
+    S_l=(X.transpose())@(y-g(zvec_n))
+    H_l=-(X.transpose())@D_n@X
+
+    zvec_m=X0@beta_mixed_Breve_Exact_Oracle
+    D_M=np.diag(g_tag(zvec_m))
+    S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+    H_u=-(X0.transpose())@D_M@X0/M
+
+    S=alpha_LM_O*S_u+ (1-alpha_LM_O)*S_l/n
+    H=alpha_LM_O*H_u+ (1-alpha_LM_O)*H_l/n
+
+    norm=np.linalg.norm(S,2)
+    while j<maxIter and norm>StopCrit:
+      beta_mixed_Breve_Exact_Oracle=beta_mixed_Breve_Exact_Oracle-(np.linalg.inv(H))@S
+
+      zvec_n=X@beta_mixed_Breve_Exact_Oracle
+      D_n=np.diag(g_tag(zvec_n))
+      S_l=(X.transpose())@(y-g(zvec_n))
+      H_l=-(X.transpose())@D_n@X
+
+      zvec_m=X0@beta_mixed_Breve_Exact_Oracle
+      D_M=np.diag(g_tag(zvec_m))
+      S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+      H_u=-(X0.transpose())@D_M@X0/M
+
+      S=alpha_LM_O*S_u+ (1-alpha_LM_O)*S_l/n
+      H=alpha_LM_O*H_u+ (1-alpha_LM_O)*H_l/n
+
+      norm=np.linalg.norm(S,2)
+
+      j+=1
+ ###############
+
+    z_L_M_Exact_Oracle=Xst@beta_mixed_Breve_Exact_Oracle
+    test_mixed_Breve_Exact_Oracle[i,sig]=np.mean( G(z_L_M_Exact_Oracle)-  mtes*z_L_M_Exact_Oracle )
+
+
+
+#######################################################################
+########################################################################
+    if sig==sigChoos:
+      for alph in range(alpha_lev):
+        alpha_star=alpha_vals[alph]
+
+        betaM=(1-alpha_star)*beta_OLS+alpha_star*beta_SOLS2
+        zM=Xst@betaM
+
+        test_All_Alphas_1[i,alph]=np.mean( G(zM)-  mtes*zM )
+
+
+
+    ############# Mixed Newton-Raphson (BREVE):
+        alpha_star2=alpha_vals[alph]
+        beta_L_M=beta0
+        j=1
+        zvec_n=X@beta_L_M
+        D_n=np.diag(g_tag(zvec_n))
+        S_l=(X.transpose())@(y-g(zvec_n))
+        H_l=-(X.transpose())@D_n@X
+
+        zvec_m=X0@beta_L_M
+        D_M=np.diag(g_tag(zvec_m))
+        S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+        H_u=-(X0.transpose())@D_M@X0/M
+
+        S=alpha_star2*S_u+ (1-alpha_star2)*S_l/n
+        H=alpha_star2*H_u+ (1-alpha_star2)*H_l/n
+
+        norm=np.linalg.norm(S,2)
+        while j<maxIter and norm>StopCrit:
+          beta_L_M=beta_L_M-(np.linalg.inv(H))@S
+
+          zvec_n=X@beta_L_M
+          D_n=np.diag(g_tag(zvec_n))
+          S_l=(X.transpose())@(y-g(zvec_n))
+          H_l=-(X.transpose())@D_n@X
+
+          zvec_m=X0@beta_L_M
+          D_M=np.diag(g_tag(zvec_m))
+          S_u= cov_Xy - (X0.transpose())@g(zvec_m)/M
+          H_u=-(X0.transpose())@D_M@X0/M
+
+          S=alpha_star2*S_u+ (1-alpha_star2)*S_l/n
+          H=alpha_star2*H_u+ (1-alpha_star2)*H_l/n
+
+          norm=np.linalg.norm(S,2)
+
+          j+=1
+    ###############
+
+        z_L_M=Xst@beta_L_M
+        test_All_Alphas_2[i,alph]=np.mean( G(z_L_M)-  mtes*z_L_M )
+
+
+
+
+
+  if i%50==49:
+    print(i+1,'samples so far')
+
+
+print('Simulation Finished')
+
+for i in range(Samp_size):
+  for sig in range(sig_lev):
+    test_Hyb[i,sig]=test_sup[i,sig]
+    test_Hyb2[i,sig]=test_sup[i,sig]
+
+    if ((n-1)/n)*test_Fs1[i,sig]<test_sigs3[i,sig]:
+      test_Hyb[i,sig]=test_semi2[i,sig]
+
+    if ((n-1)/n)*test_Fs2[i,sig]<test_sigs3[i,sig]:
+      test_Hyb2[i,sig]=test_semi2[i,sig]
+
+
+
 
