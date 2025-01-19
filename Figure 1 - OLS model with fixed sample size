@@ -1,0 +1,344 @@
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import norm
+from scipy.stats import t
+from scipy.stats import uniform
+
+rng = default_rng()
+
+import matplotlib.pyplot as plt
+
+# **Figure 1**
+
+########### Setting:
+p=50 #25
+n=100 #50
+N=5*10**4
+
+mu=np.zeros(p)
+rho=0.9
+Sigma=np.zeros((p,p))
+r = 5 #number of blocks
+block = p/r #size of a block
+
+for j in range(r):
+    i0 = j*block
+    i1 = (j+1)*block-1
+    i0=int(i0)
+    i1=int(i1)
+    Sigma[i0:i1+1,i0:i1+1] = rho
+
+
+Sigma=(Sigma+np.eye(p)*(1-rho))*0.25
+
+Xst = rng.multivariate_normal(mu,Sigma,N)
+
+Sigma1= Xst.transpose()@Xst/N
+Sigma1_inv=np.linalg.inv(Sigma1)
+
+
+ones_n=np.ones((n,1))
+X_m=np.zeros((p,1))
+
+
+
+b0=1.5
+b02_Mat=np.zeros((p,p))+b0**2
+##################### Unsupervised estimation: #############################
+Samp_size=5*10**3
+Ip=np.eye(p)
+B=0
+B_Fixed=0
+V=0
+
+Q=np.zeros((p,p))
+HD=np.zeros((p,p))
+
+alpha_vals=np.arange(0.02,1,0.02)
+alpha_lev=alpha_vals.shape[0]
+Bddot=np.zeros(alpha_lev)
+Vddot=np.zeros(alpha_lev)
+
+BddotMats=np.zeros((p,p,alpha_lev))
+
+for i in range(Samp_size):
+  tr_id=rng.choice(range(N),size=n, replace=False)
+  X = Xst[tr_id,:]
+  mat0=(X.T)@X
+  Hb=mat0/n
+  mat1=np.linalg.inv(mat0 )
+  HD+=mat0@(Sigma1_inv/n)@mat0
+  Q+=mat1
+
+  HQ_mat=n*Sigma1@mat1
+  V=V+HQ_mat.trace()
+  HH2_mat=(X.transpose())@X@(Sigma1_inv/n)@(X.transpose())@X-n*Sigma1
+  B=B+HH2_mat.trace()
+  B_Fixed= B_Fixed+ (HH2_mat@b02_Mat).trace()
+
+  for j in range(alpha_lev):
+    alpha_t=alpha_vals[j]
+    Sa=np.linalg.inv( (1-alpha_t)*Hb + alpha_t*Sigma1)
+    matB=((Sa@Hb-Ip).transpose())@Sigma1@(Sa@Hb-Ip)
+    Bddot[j]+=(matB@b02_Mat).trace()
+    BddotMats[:,:,j]+=matB
+
+    matV=Sigma1@Sa@Hb@Sa
+    Vddot[j]+=matV.trace()
+
+
+Vddot=Vddot/Samp_size
+Bddot=Bddot/Samp_size
+BddotMats=BddotMats/Samp_size
+
+HD=HD/Samp_size
+Q=Q/Samp_size
+V=V/Samp_size
+B=B/Samp_size
+B_Fixed=B_Fixed/Samp_size
+
+
+sig_vals=np.sqrt(np.arange(180,320,10))
+sig_lev=sig_vals.shape[0]
+
+D=V-p
+AlphaO_vals=(D*sig_vals**2)/(B_Fixed+D*sig_vals**2)
+R_BetaO_vals=(V*sig_vals**2-((D*sig_vals**2)**2)/(B_Fixed+D*sig_vals**2))/n
+
+
+R_BetaLM_O_vals=np.empty(sig_lev)
+Alpha_BetaLM_O_vals=np.empty(sig_lev)
+for sig in range(sig_lev):
+  sige=sig_vals[sig]
+  Rvals=(sige**2)*Vddot/n+Bddot
+  R_BetaLM_O_vals[sig]=np.min(Rvals)
+  Alpha_BetaLM_O_vals[sig]=alpha_vals[np.argmin(Rvals)]
+
+
+
+################# Full simulation:
+B_b=(1-1/n)*(1-1/(n*(p+1)))*B
+V_b=(1-1/n)*p
+
+
+test_sup=np.empty((Samp_size,sig_lev))
+test_semi1=np.empty((Samp_size,sig_lev))
+test_semi2=np.empty((Samp_size,sig_lev))
+
+test_null=np.empty((Samp_size,sig_lev))
+
+test_Hyb=np.empty((Samp_size,sig_lev))
+test_MixedOpt=np.empty((Samp_size,sig_lev))
+
+test_Mixed_Fixed=np.empty((Samp_size,sig_lev))
+test_Mixed_Fixed_Small_Corr=np.empty((Samp_size,sig_lev))
+test_Mixed_Fixed_No_Corr=np.empty((Samp_size,sig_lev))
+
+test_Rs1=np.empty((Samp_size,sig_lev))
+test_Rs2=np.empty((Samp_size,sig_lev))
+test_Rs3=np.empty((Samp_size,sig_lev))
+
+test_sigs1=np.empty((Samp_size,sig_lev))
+test_tau1=np.empty((Samp_size,sig_lev))
+
+
+test_mixed_tilde=np.empty((Samp_size,sig_lev))
+test_mixed_Breve=np.empty((Samp_size,sig_lev))
+
+test_mixed_tilde_Opt=np.empty((Samp_size,sig_lev))
+test_mixed_Breve_Opt=np.empty((Samp_size,sig_lev))
+
+
+test_mixed_Breve_ExactEst=np.empty((Samp_size,sig_lev))
+test_mixed_Breve_Exact_Oracle=np.empty((Samp_size,sig_lev))
+
+Ip=np.eye(p)
+
+mtes= np.reshape(b0*np.sum(Xst,1),(N,1))
+
+
+for i in range(Samp_size):
+  tr_id=rng.choice(range(N),size=n, replace=False)
+  X = Xst[tr_id,:]
+  ymeans=mtes[tr_id,:] #  b0*np.sum(X,1)
+
+  for sig in range(sig_lev):
+    sige=sig_vals[sig]
+    y=ymeans+ np.reshape(rng.standard_normal(n)*sige,(n,1) )
+
+    yh_null=np.mean(y)
+
+############# supervised OLS:
+    beta_OLS=np.linalg.inv((X.transpose())@X )@(X.transpose())@y
+
+############# Semi-supervised_Tilde:
+    beta_SOLS1=Sigma1_inv@(X.transpose())@y/n
+
+############# Semi-supervised_Breve:
+    X_m[:,0]=np.mean(X,0)
+    mean_mat=(ones_n)@(X_m.transpose())
+    Xc=X-mean_mat
+    cov_Xy=( (X-mean_mat).transpose())@( y-np.mean(y) )/n
+
+
+    beta_SOLS2=Sigma1_inv@cov_Xy
+
+################################ Estimating sigma and tau:
+    RSS=np.sum( (X@beta_OLS-y)**2 )
+
+    sig_h=RSS/(n-p)
+    test_sigs1[i,sig]=sig_h
+
+    #tau_h=np.maximum( (np.mean(y**2)-sig_h)/Sigma1.trace() ,0.01)
+    #test_tau1[i,sig]=tau_h
+
+
+################################ Estimating  the bias term:
+    beta_SOLS2Vec=beta_SOLS2.reshape(p,1)
+    B_h=np.maximum(  ( ( (HD-n*Sigma1)@beta_SOLS2Vec@beta_SOLS2Vec.T).trace() -((n-1)/n)*sig_h*((HD-n*Sigma1)@Q).trace() )/n, 0.01)
+
+    B_h_Small_Corr=np.maximum( ( ( (HD-n*Sigma1)@beta_SOLS2Vec@beta_SOLS2Vec.T).trace() -sig_h*((HD-n*Sigma1)@Q).trace() )/n , 0.01)
+
+    B_h_No_Corr=np.maximum( (( (HD-n*Sigma1)@beta_SOLS2Vec@beta_SOLS2Vec.T).trace())/n , 0.01)
+
+
+
+    ############## Estimating Rs:
+    test_Rs1[i,sig]= sig_h*V/n
+    test_Rs2[i,sig]= sig_h*p/n+B_h
+    test_Rs3[i,sig]= (test_Rs2[i,sig])*(n-1)/n
+
+    Imin=np.argmin([ test_Rs1[i,sig],test_Rs3[i,sig] ])
+
+    ############## alpha_star Rs:
+    a_star_Opt=(sige**2)*(V-p)/((sige**2)*(V-p)+ 1*B_Fixed  )
+
+    a_star_Fixed=sig_h*(V-p*(n-1)/n)/( sig_h*(V-p*(n-1)/n)+B_h*n  )
+
+    a_star_Fixed_Small_Corr=sig_h*(V-p*(n-1)/n)/( sig_h*(V-p*(n-1)/n)+B_h_Small_Corr*n  )
+
+    a_star_Fixed_No_Corr=sig_h*(V-p*(n-1)/n)/( sig_h*(V-p*(n-1)/n)+B_h_No_Corr*n  )
+    ##############################
+
+    test_sup[i,sig]=np.mean( (Xst@beta_OLS -  mtes)**2 )
+    test_semi1[i,sig]=np.mean( (Xst@beta_SOLS1 -  mtes)**2 )
+    test_semi2[i,sig]=np.mean( (Xst@beta_SOLS2 -  mtes)**2 )
+
+
+    test_MixedOpt[i,sig]=np.mean( (Xst@(a_star_Opt*beta_SOLS2+(1-a_star_Opt)*beta_OLS) -  mtes)**2 )
+
+
+    test_Mixed_Fixed[i,sig]=np.mean( (Xst@(a_star_Fixed*beta_SOLS2+(1-a_star_Fixed)*beta_OLS) -  mtes)**2 )
+
+    test_Mixed_Fixed_Small_Corr[i,sig]=np.mean( (Xst@(a_star_Fixed_Small_Corr*beta_SOLS2+(1-a_star_Fixed_Small_Corr)*beta_OLS) -  mtes)**2 )
+
+    test_Mixed_Fixed_No_Corr[i,sig]=np.mean( (Xst@(a_star_Fixed_No_Corr*beta_SOLS2+(1-a_star_Fixed_No_Corr)*beta_OLS) -  mtes)**2 )
+
+
+    test_null[i,sig]=np.mean( (yh_null -  mtes)**2 )
+
+    test_Hyb[i,sig]= [ test_sup[i,sig],test_semi2[i,sig] ][Imin]
+
+
+############# Mixed-Loss_tilde:
+    beta_mixed_tilde=np.linalg.inv( (1-a_star_Fixed)*(X.transpose())@X + a_star_Fixed*n*Sigma1)@(X.transpose())@y
+
+############# SMixed-Loss_Breve:
+    beta_mixed_Breve=np.linalg.inv( (1-a_star_Fixed)*(X.transpose())@X/n + a_star_Fixed*Sigma1)@cov_Xy
+
+    test_mixed_tilde[i,sig]=np.mean( (Xst@beta_mixed_tilde -  mtes)**2 )
+    test_mixed_Breve[i,sig]=np.mean( (Xst@beta_mixed_Breve -  mtes)**2 )
+
+
+
+
+##################### With Opt-Alpha:
+    ############# Mixed-Loss_tilde:
+    beta_mixed_tilde_Opt=np.linalg.inv( (1-a_star_Opt)*(X.transpose())@X + a_star_Opt*n*Sigma1)@(X.transpose())@y
+
+    ############# Mixed-Loss_Breve:
+    beta_mixed_Breve_Opt=np.linalg.inv( (1-a_star_Opt)*(X.transpose())@X/n + a_star_Opt*Sigma1)@cov_Xy
+
+    test_mixed_tilde_Opt[i,sig]=np.mean( (Xst@beta_mixed_tilde_Opt -  mtes)**2 )
+    test_mixed_Breve_Opt[i,sig]=np.mean( (Xst@beta_mixed_Breve_Opt -  mtes)**2 )
+
+
+############ Oracles and Exact estimation for BetaLMs:
+    Bvals=np.empty(alpha_lev)
+    for j in range(alpha_lev):
+      matB=BddotMats[:,:,j]
+      Bvals[j]+=(matB@beta_SOLS2Vec@beta_SOLS2Vec.T).trace()
+
+    Rvals_h=(sig_h)*Vddot/n+Bvals
+    alpha_ExactEst =alpha_vals[np.argmin(Rvals_h)]
+
+    beta_mixed_Breve_ExactEst=np.linalg.inv( (1-alpha_ExactEst)*(X.transpose())@X/n + alpha_ExactEst*Sigma1)@cov_Xy
+    test_mixed_Breve_ExactEst[i,sig]=np.mean( (Xst@beta_mixed_Breve_ExactEst -  mtes)**2 )
+
+
+    alpha_Exact_Oracle = Alpha_BetaLM_O_vals[sig]
+
+    beta_mixed_Breve_Exact_Oracle=np.linalg.inv( (1-alpha_Exact_Oracle)*(X.transpose())@X/n + alpha_Exact_Oracle*Sigma1)@cov_Xy
+    test_mixed_Breve_Exact_Oracle[i,sig]=np.mean( (Xst@beta_mixed_Breve_Exact_Oracle -  mtes)**2 )
+
+
+  if i%100==99:
+    print(i+1,'samples so far')
+
+
+
+### Plotting:
+
+x2=sig_vals**2
+
+y21=np.mean(test_sup,0)
+y22=np.mean(test_semi1,0)
+y23=np.mean(test_semi2,0)
+y24=np.mean(test_Hyb,0)
+y25=np.mean(test_Mixed_Fixed,0)
+y26=np.mean(test_MixedOpt,0)
+y27=np.mean(test_mixed_Breve,0)
+y28=np.mean(test_mixed_Breve_ExactEst,0)
+y29=np.mean(test_mixed_Breve_Exact_Oracle,0)
+
+
+nullerrs=np.mean(test_null,0)
+nullerr= nullerrs[0]
+s1=2
+s2=7
+s3=15
+s4=18
+
+fig= plt.figure(figsize=(15,8))
+
+plt.ylim((80,400))
+
+ones_p=np.ones((p,1))
+
+nullErr_T=(b0**2)*(ones_p.T@Sigma1@ones_p)
+
+t=Sigma1.trace()*(n-p-1)/p
+
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+plt.plot(x2,y21,'ro--', linewidth=s1, markersize=s2)
+plt.plot(x2,y23,'bo--', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y24,'yo--', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y25,'o--',color='pink', linewidth=s1, markersize=s2)
+plt.plot(x2,y26,'x--',color='darkgray', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y27,'o--',color='lightgreen', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y28,'o--',color='orange', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y29,'x--',color='black', linewidth=s1, markersize=s2)
+
+
+plt.xlabel(r'$\sigma^2$', fontsize=s4)
+plt.legend( [r'$r(\hat{\beta})$', r'$r(\breve{\beta})$', r'$r(\beta^D)$', r'$r(\dot{\beta}_{\hat{\alpha}})$', r'$r(\dot{\beta}_{\alpha^*})$', r'$r(\ddot{\beta}_{\hat{\alpha}})$', r'$r(\ddot{\beta}_{\tilde{\alpha}})$', r'$r(\ddot{\beta}_{\alpha^{**}})$'],   fontsize=s4)
+
+
+plt.title('Semi Supervised OLS, Fixed-'+r'$\beta$, p='+str(p)+ ' n='+str(n) , fontsize=25 )
+
