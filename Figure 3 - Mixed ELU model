@@ -1,0 +1,11 @@
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import norm
+from scipy.stats import t
+from scipy.stats import uniform
+
+rng = default_rng()
+
+import matplotlib.pyplot as plt
+
+
