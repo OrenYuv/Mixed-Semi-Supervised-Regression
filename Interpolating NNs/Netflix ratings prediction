@@ -1,0 +1,74 @@
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import norm
+from scipy.stats import t
+from scipy.stats import uniform
+
+rng = default_rng()
+
+import matplotlib.pyplot as plt
+
+import torch
+import pandas as pd
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import norm
+rng = default_rng()
+
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import copy
+
+############# Download the relevant Netflix data set and make it accesiable ##############
+############# Data importing:
+Xdata = pd.read_csv('/content/drive/My Drive/Datasets/Netflix_X_Vote.csv')
+Xdata_tensor = torch.tensor(Xdata.values, dtype=torch.float)
+
+ydata = pd.read_csv('/content/drive/My Drive/Datasets/Netflix_y.csv')
+ydata_tensor = torch.tensor(ydata.values, dtype=torch.float)
+
+#### Preprocessing:
+
+ydata_tensor = ydata_tensor.view(12931,1)
+###### Normal scaling:
+Xdata_tensor-=Xdata_tensor.mean(0)
+Xdata_tensor/=Xdata_tensor.std(0)
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+######## Define the setting:
+q1=0   #starting feacher
+q2=40   #end feacher
+######### Transductive setting:
+Ztr=Xdata_tensor[:,q1:q2]
+N=Ztr.size()[0]
+p=Ztr.size()[1]
+print('Z-size= ',N)
+print('p = ',p)
+
+n_vals=  np.arange(95,80,-5)        ########## np.arange(115,80,-5)
+n_lev=n_vals.shape[0]
+
+Samp_size= 2*10**2
+F_size=int(N/Samp_size)
+
+
+Mini_Samp_size=10**2
+Mid_Samp_size=5*10**2
+
+LR_f= nn.LeakyReLU(0.1)
+TanH_f= nn.Tanh()
+
+
+yte=ydata_tensor.detach().numpy()
+Xte=Ztr.detach().numpy()
+X_m=np.zeros((p,1))
+
+inputs_te=Ztr
+labels_te=ydata_tensor
+inputs_te=inputs_te.to(device)
+labels_te=labels_te.to(device)
+
+
