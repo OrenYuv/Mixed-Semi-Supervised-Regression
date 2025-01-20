@@ -1,0 +1,321 @@
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import norm
+from scipy.stats import t
+from scipy.stats import uniform
+
+rng = default_rng()
+
+import matplotlib.pyplot as plt
+
+########### Setting:
+p=100
+n=50
+N=5*10**4
+gam_tilde=1.6
+gam=2
+mu=np.zeros(p)
+############## Defining Sigma:
+mu=np.zeros(p)
+Sigma=np.zeros((p,p))
+Ip=np.eye(p)
+
+for j in range(p):
+  if j<=n*gam_tilde:
+    Sigma[j,j] = 1
+  else:
+    Sigma[j,j] = 1/n
+
+SigTr=Sigma.trace()
+
+
+
+Xst = rng.multivariate_normal(mu,Sigma,N)
+
+Sigma1= Xst.transpose()@Xst/N
+Sigma1_inv=np.linalg.inv(Sigma1)
+
+SigTr_hat=Sigma1.trace()
+
+Samp_size=5*10**3
+
+Vl=0
+Bl=0
+B_crit=0
+V_crit=0
+Usig_crit=0
+Utau_crit=0
+U_hat_1=0
+U_hat_2=0
+E1=0
+E2=0
+E3=np.zeros((n,n))
+
+for i in range(Samp_size):
+  tr_id=rng.choice(range(N),size=n, replace=False)
+  X = Xst[tr_id,:]
+
+  XX_inv=np.linalg.inv(X@(X.transpose()) )
+  XSigX_inv=np.linalg.inv(X@Sigma1_inv@(X.transpose()))
+
+  Usig_crit+=XSigX_inv.trace()
+
+
+  E1+=XX_inv.trace()
+  E2+=(XX_inv@XX_inv).trace()
+  E3+=XX_inv@XX_inv
+
+
+  mat1=X@Sigma1@(X.transpose())@XX_inv
+
+  mat2=X@(X.transpose())@XSigX_inv
+
+  U_hat_2+=mat1.trace()
+
+  Utau_crit+=mat2.trace()
+  B_crit+= (mat1-mat2).trace()
+  Bl+=(mat1).trace()
+
+
+  mat1=XSigX_inv
+
+  mat2=X@Sigma1@(X.transpose())@XX_inv@XX_inv
+
+
+  U_hat_1+=mat2.trace()
+
+  V_crit+= (mat1-mat2).trace()
+
+  Vl+=(mat2).trace()
+
+
+Bl/=Samp_size
+Bl=Sigma1.trace()-Bl
+Vl/=Samp_size
+B_crit=B_crit/Samp_size
+V_crit=-V_crit/Samp_size
+
+F_tilde=B_crit/V_crit
+
+Utau_crit=Utau_crit/Samp_size
+
+Usig_crit=Usig_crit/Samp_size
+
+U_tilde_rand=(Utau_crit+Sigma1.trace()/n)/(Usig_crit-1/n)
+
+
+U_tilde=Utau_crit/Usig_crit
+
+
+U_hat_1=U_hat_1/Samp_size
+U_hat_2=U_hat_2/Samp_size
+
+U_hat=U_hat_2/U_hat_1
+
+
+E1=E1/Samp_size
+E2=E2/Samp_size
+E3=E3/Samp_size
+
+sig_vals= np.sqrt(np.arange(5,35,5))   #np.sqrt(np.arange(70,180,5))
+sig_lev=sig_vals.shape[0]
+
+
+AlphaO_vals=(V_crit*sig_vals**2)/(B_crit+V_crit*sig_vals**2)
+R_BetaO_vals= Bl+Vl*sig_vals**2+(B_crit+V_crit*sig_vals**2)*AlphaO_vals**2-2*AlphaO_vals*V_crit*sig_vals**2
+
+
+############# Full Simulation
+test_sup=np.empty((Samp_size,sig_lev))
+test_semi=np.empty((Samp_size,sig_lev))
+test_null=np.empty((Samp_size,sig_lev))
+
+test_Hyb=np.empty((Samp_size,sig_lev))
+test_Hyb2=np.empty((Samp_size,sig_lev))
+
+test_taus=np.empty((Samp_size,sig_lev))
+test_sigs=np.empty((Samp_size,sig_lev))
+test_taus2=np.empty((Samp_size,sig_lev))
+test_sigs2=np.empty((Samp_size,sig_lev))
+
+test_ADP=np.empty((Samp_size,sig_lev))
+test_ADP2=np.empty((Samp_size,sig_lev))
+test_Oracle_mixed=np.empty((Samp_size,sig_lev))
+test_Mix=np.empty((Samp_size,sig_lev))
+
+
+test_semi_O1=np.empty((Samp_size,sig_lev))
+test_semi_O2=np.empty((Samp_size,sig_lev))
+
+for i in range(Samp_size):
+  tr_id=rng.choice(range(N),size=n, replace=False)
+  beta_real=rng.multivariate_normal(mu,np.eye(p),1)
+  beta_real.shape=(p)
+  mtes=Xst@beta_real
+
+  X = Xst[tr_id,:]
+  ymeans=mtes[tr_id]
+
+  for sig in range(sig_lev):
+    sige=sig_vals[sig]
+    y=ymeans + rng.standard_normal(n)*sige
+
+    XXinv=np.linalg.inv(X@(X.transpose()) )
+    beta_OLS=(X.transpose())@XXinv@y
+    XSigXinv=np.linalg.inv(X@Sigma1_inv@(X.transpose()))
+    beta_SOLS=Sigma1_inv@(X.transpose())@XSigXinv@y
+
+    h_mat=(X.transpose())@XXinv@X
+
+    yh_OLS=Xst@beta_OLS
+    yh_SOLS=Xst@beta_SOLS
+    yh_null=np.mean(y)
+
+    test_sup[i,sig]=np.mean( (mtes-yh_OLS)**2)
+    test_semi[i,sig]=np.mean( (mtes-yh_SOLS)**2)
+    test_null[i,sig]=np.mean( (yh_null-mtes)**2)
+
+
+
+    Numer=(y.transpose())@XXinv@XXinv@y  #E3
+    Denom=(XXinv@XXinv).trace()
+    XXinv_tr=XXinv.trace()
+
+    tau_h=(beta_OLS.transpose())@Sigma1@beta_OLS/SigTr_hat
+
+
+    for j in range(5):
+      sig_h= ( np.maximum(Numer -tau_h*XXinv_tr  ,0.01) )/( Denom )   #E1
+      tau_h= ( np.maximum( (y**2).mean()- sig_h , 0.01 ) )/(   SigTr_hat   )      #########  ((X.transpose())@X).trace()/n     #
+
+
+    test_taus[i,sig]=tau_h
+    test_sigs[i,sig]=sig_h
+
+    XSigX_inv=np.linalg.inv(X@Sigma1_inv@(X.transpose()))
+
+    Numer2=(y.transpose())@XSigX_inv@XSigX_inv@y  #E3
+    Denom2=(XSigX_inv@XSigX_inv).trace()
+    XXinv_tr2=((X.transpose())@XSigX_inv@XSigX_inv@X).trace()
+
+    tau_h2=(beta_OLS.transpose())@Sigma1@beta_OLS/SigTr_hat
+    nullerr=SigTr_hat
+
+    for j in range(5):
+      sig_h2= ( np.maximum(Numer2 -tau_h2*XXinv_tr2 ,0.01) )/( Denom2 )   #E1
+      tau_h2= ( np.maximum( (y**2).mean()- sig_h2 , 0.01 ) )/(   nullerr   )      #########  ((X.transpose())@X).trace()/n     #
+
+    test_taus2[i,sig]=tau_h2
+    test_sigs2[i,sig]=sig_h2
+
+
+    NSR_h=sig_h/tau_h
+
+    values=np.array([test_sup[i,sig],test_semi[i,sig],test_null[i,sig]])
+
+    R_hat=sig_h*U_hat_1 -tau_h*(  U_hat_2  )
+    R_tilde=sig_h*Usig_crit -tau_h*(  Utau_crit  )
+
+
+    R_null=sig_h/n+tau_h*nullerr*(n+1)/n
+
+
+    est_values=np.array([R_hat,R_tilde,R_null])
+    index_min = np.argmin(est_values)
+    test_Hyb[i,sig]=values[index_min]
+
+
+    Alpha_star_h=(sig_h*V_crit)/(sig_h*V_crit+tau_h*B_crit)
+    beta_ADP= (1-Alpha_star_h)*beta_OLS + Alpha_star_h*beta_SOLS
+    yh_ADP=Xst@beta_ADP
+    test_ADP[i,sig]=np.mean( (mtes-yh_ADP)**2)
+
+    ################# Using the other estimation:
+    Alpha_star_h=(sig_h2*V_crit)/(sig_h2*V_crit+tau_h2*B_crit)
+    beta_ADP= (1-Alpha_star_h)*beta_OLS + Alpha_star_h*beta_SOLS
+    yh_ADP=Xst@beta_ADP
+    test_ADP2[i,sig]=np.mean( (mtes-yh_ADP)**2)
+
+
+
+    sig_semi_O1=( np.maximum(Numer -1*(XXinv.trace())  ,0.01) )/( Denom )
+    Alpha_star_semi_O1=(sig_semi_O1*V_crit)/(sig_semi_O1*V_crit+1*B_crit)
+    beta_Mixed_semi_O1= (1-Alpha_star_semi_O1)*beta_OLS + Alpha_star_semi_O1*beta_SOLS
+    yh_Mixed_semi_O1=Xst@beta_Mixed_semi_O1
+    test_semi_O1[i,sig]=np.mean( (mtes-yh_Mixed_semi_O1)**2)
+
+
+    sig_semi_O2=np.maximum( (y**2).mean()- 1*nullerr   ,0.01)
+    Alpha_star_semi_O2=(sig_semi_O2*V_crit)/(sig_semi_O2*V_crit+1*B_crit)
+    beta_Mixed_semi_O2= (1-Alpha_star_semi_O2)*beta_OLS + Alpha_star_semi_O2*beta_SOLS
+    yh_Mixed_semi_O2=Xst@beta_Mixed_semi_O2
+    test_semi_O2[i,sig]=np.mean( (mtes-yh_Mixed_semi_O2)**2)
+
+
+
+
+    Alpha_star_O=AlphaO_vals[sig]
+    beta_Mixed_O= (1-Alpha_star_O)*beta_OLS + Alpha_star_O*beta_SOLS
+    yh_Mixed_O=Xst@beta_Mixed_O
+    test_Oracle_mixed[i,sig]=np.mean( (mtes-yh_Mixed_O)**2)
+
+
+    Mix_mat=np.linalg.inv( (1-Alpha_star_h)*Ip + Alpha_star_h*Sigma1  )
+    X_MixMat_X__inv=np.linalg.inv(X@Mix_mat@(X.transpose()))
+    beta_Mix=Mix_mat@(X.transpose())@X_MixMat_X__inv@y
+    yh_Mix=Xst@beta_Mix
+    test_Mix[i,sig]=np.mean( (mtes-yh_Mix)**2)
+
+
+    test_Hyb2[i,sig]=test_sup[i,sig]
+    if R_hat>R_tilde:
+      test_Hyb2[i,sig]=test_semi[i,sig]
+
+
+  if i%100==99:
+    print(i+1,'samples so far')
+
+### Plotting:
+
+x2=sig_vals**2
+
+y21=np.mean(test_sup,0)
+y22=np.mean(test_semi,0)
+y232=np.mean(test_Hyb2,0)
+y233=np.mean(test_ADP,0)
+y24=np.mean(test_Oracle_mixed,0)
+y25=np.mean(test_Mix,0)
+
+y26=np.mean(test_semi_O1,0)
+y27=np.mean(test_semi_O2,0)
+
+
+s1=2
+s2=7
+s3=15
+s4=20
+fig= plt.figure(figsize=(15,8))
+
+
+#plt.subplot(212)
+ax = fig.add_subplot(111)
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+
+plt.plot(x2,y21,'ro--', linewidth=s1, markersize=s2)
+plt.plot(x2,y22,'bo--',linewidth=s1, markersize=s2)
+plt.plot(x2,y233,'o--',color='pink', linewidth=s1, markersize=s2/1.5)
+plt.plot(x2,y26,'x--',color='gray', linewidth=s1, markersize=s2/1.5)
+plt.plot(x2,y24,'--',color='black', linewidth=s1, markersize=s2/1.5)
+
+
+plt.xlabel(r'$\sigma^2 / \tau^2$', fontsize=s4)
+
+plt.legend( [r'$r(\hat{w})$', r'$r(\tilde{w})$', r'$r(\dot{w}_{\hat{\alpha}})$',r'$r(\dot{w}_{\hat{\alpha}(\tau)})$', r'$r(\dot{w}_{\alpha^*_w})$'],   fontsize=s4)
+
+
+plt.title('Semi Supervised Linear Interpolator, ' +r'$n=50, p=100$' , fontsize=25 )
+
+
+
+
