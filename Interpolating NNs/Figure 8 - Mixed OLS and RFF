@@ -1,1 +1,62 @@
+import matplotlib.pyplot as plt
+import torch
+import pandas as pd
+import numpy as np
+#Uniform # Normal
+data = pd.read_csv('/content/drive/My Drive/Results/Semi_Supervised_OLS_RFF_Interpolator__Netflix_Normal_full_WithELU_20Folds.csv', header=None )  ##### Or  fig1_0
+#data = torch.tensor(data.values, dtype=torch.float)
+data = data.to_numpy()
+https://github.com/OrenYuv/Mixed-Semi-Supervised-Regression/tree/main/Interpolating%20NNs
+data=data[:,1:-3]
 
+x2=data[0,:]
+
+y21=data[1,:]
+y22=data[2,:]
+y23=data[3,:]  #########
+y24=data[4,:]
+
+y31=data[5,:]
+y32=data[6,:]
+y33=data[7,:]
+
+p=40
+
+s1=2
+s2=7
+s3=15
+s4=20
+fig= plt.figure(figsize=(15,8))
+
+#plt.subplot(111)
+#plt.xticks(fontsize=s3)
+#plt.yticks(fontsize=s3)
+
+
+
+#plt.subplot(212)
+ax = fig.add_subplot(111)
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+plt.plot(x2,y21,'ro--', linewidth=s1, markersize=s2)
+plt.plot(x2,y22,'bo--', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y23,'o--',color='green', linewidth=s1, markersize=s2)
+plt.plot(x2,y24,'o--',color='orange', linewidth=s1, markersize=s2)
+
+
+plt.plot(x2,y31,'x-',color='magenta', linewidth=s1, markersize=s2)
+plt.plot(x2,y32,'x-',color='cyan' , linewidth=s1, markersize=s2)
+
+plt.plot(x2,y33,'x-',color='yellow', linewidth=s1, markersize=s2)
+
+
+plt.xlabel(r'$\sigma^2$', fontsize=s4)
+plt.legend( [r'$R(\hat{\beta})$',r'$R(\breve{\beta})$', r'$R(\dot{\beta}_{\hat{\alpha}})$', r'$R(\ddot{\beta}_{\tilde{\alpha}})$' ,r'$R(\hat{w})$', r'$R(\tilde{w})$', r'$R(\dot{w}_{\hat{\alpha}})$'],loc='upper left',   fontsize=s4)
+
+plt.xlim(max(x2)+2, min(x2)-2)
+plt.ylim(min(y33)-0.05, max(y21)+0.05 )
+
+plt.xlabel(r'$n$', fontsize=s4)
+
+plt.title('Mixed-Semi-Supervised OLS and RFF, Netflix data, p='+str(p) , fontsize=22 
