@@ -1,0 +1,282 @@
+import numpy as np
+from numpy.random import default_rng
+from scipy.stats import norm
+from scipy.stats import t
+from scipy.stats import uniform
+
+rng = default_rng()
+
+import matplotlib.pyplot as plt
+
+### Setting:
+
+gam_tilde=1.6
+gam=2
+sige=5
+tau=1
+Dv_inf=(gam-gam_tilde)/((1-gam)*(1-gam_tilde) )
+Db_inf=sige**2*(gam-gam_tilde)/(gam_tilde*gam)
+
+
+
+eta_inf=1-(  (gam-gam_tilde)/(gam-1))/ ( ((gam-1)*(gam_tilde-1)+gam*gam_tilde)*(gam_tilde**2-gam_tilde+1)/(gam*gam_tilde**2) )
+#print('Relative Risk in Theory: ',eta_inf)
+
+a_star_Opt_Inf=(sige**2)*Dv_inf/((sige**2)*Dv_inf+ tau**2*Db_inf  )
+#print('alpha* in Theory: ',a_star_Opt_Inf)
+
+n_vals=np.array((20,30,50,80,120,170,230,300)) #,390,500
+n_lev=n_vals.shape[0]
+N=10**5
+gam=2
+gam_tilde=1.6
+sige=5
+tau=1
+
+
+#print('Vl_inf: ',1/(gam_tilde-1))
+#print('Bl_inf: ',(1-1/gam_tilde)*sige**2)
+
+Dv_inf=(gam-gam_tilde)/((1-gam)*(1-gam_tilde) )
+Db_inf=sige**2*(gam-gam_tilde)/(gam_tilde*gam)
+
+a_star_Opt_Inf=(sige**2)*Dv_inf/((sige**2)*Dv_inf+ tau**2*Db_inf  )
+#print('alpha* in Theory: ',a_star_Opt_Inf)
+
+eta_inf=1-(  (gam-gam_tilde)/(gam-1))/ ( ((gam-1)*(gam_tilde-1)+gam*gam_tilde)*(gam_tilde**2-gam_tilde+1)/(gam*gam_tilde**2) )
+#print('Relative Risk in Theory: ',eta_inf)
+#print('Relative Improvment in Theory: ',1-eta_inf)
+
+
+
+Samp_size=5*10*2
+Samp_size2=2*10**2
+
+test_sup=np.empty((Samp_size2,n_lev))
+
+test_Mixed=np.empty((Samp_size2,n_lev))
+test_Mixed2=np.empty((Samp_size2,n_lev))
+
+test_Mixed_semi=np.empty((Samp_size2,n_lev))
+test_Mixed_semi2=np.empty((Samp_size2,n_lev))
+
+test_MixedOpt=np.empty((Samp_size2,n_lev))
+test_MixedOpt2=np.empty((Samp_size2,n_lev))
+
+test_sigs1=np.empty((Samp_size2,n_lev))
+test_tau1=np.empty((Samp_size2,n_lev))
+test_sigs_semi=np.empty((Samp_size2,n_lev))
+
+Bl_Res=np.empty(n_lev)
+
+
+
+for nl in range(n_lev):
+  n=n_vals[nl]
+  p=int(gam*n)
+  p_tilde=int(gam_tilde*n)
+
+  mu=np.zeros(p)
+  Sigma=np.zeros((p,p))
+  Ip=np.eye(p)
+
+############## Defining Sigma:
+
+  for j in range(p):
+    if j<=n*gam_tilde:
+      Sigma[j,j] = 1
+    else:
+      Sigma[j,j] = 1/n
+
+  SigTr=Sigma.trace()
+  P_Fac=sige**2/SigTr
+  Sigma=Sigma*P_Fac
+  SigTr=Sigma.trace()
+
+  Xst = rng.multivariate_normal(mu,Sigma,N)
+
+  Sigma1= Xst.transpose()@Xst/N
+  Sigma1_inv=np.linalg.inv(Sigma1)
+  ones_n=np.ones((n,1))
+  X_m=np.zeros((p,1))
+
+  SigTr_hat=Sigma1.trace()
+
+
+##################### Unsupervised estimation: #############################
+  Bu=0
+  Vu=0
+  Vl=0
+  Bl=0
+  E1=0
+  E2=0
+  E3=0
+  Ip=np.eye(p)
+  for i in range(Samp_size):
+    tr_id=rng.choice(range(N),size=n, replace=False)
+    X = Xst[tr_id,:]
+
+    XX_inv=np.linalg.inv(X@(X.transpose()) )
+    XSigX_inv=np.linalg.inv(X@Sigma1_inv@(X.transpose()))
+    XX_inv2=XX_inv@XX_inv
+
+    Vu+=XSigX_inv.trace()
+    mat0=X@(X.transpose())@XSigX_inv
+    Bu+=SigTr-(mat0).trace()
+
+    mat1=X@Sigma1@(X.transpose())@XX_inv
+    Bl+=SigTr-(mat1).trace()
+
+    mat2=X@Sigma1@(X.transpose())@XX_inv2
+    Vl+=(mat2).trace()
+
+    E1+=1/((XX_inv2).trace())
+    E2+=(XX_inv2@XX_inv2).trace()/((XX_inv2).trace())**2
+    E3+=(XX_inv).trace()/((XX_inv2).trace())**2
+
+
+
+  Vl/=Samp_size
+  #print('Vl= ',Vl)
+  Bl/=Samp_size
+  #print('Bl= ',Bl)
+  Bl_Res[nl]=Bl
+
+  Vu/=Samp_size
+  #print('Vu= ',Vu)
+  Bu/=Samp_size
+  #print('Bu= ',Bu)
+
+  E1/=Samp_size
+  E2/=Samp_size
+  E3/=Samp_size
+  #print('E1=',E1)
+  #print('E2=',E2)
+  #print('E3=',E3)
+
+  Dv=Vl-Vu
+  Db=Bu-Bl
+  RelImpv=sige**4*Dv**2/( (Db*tau**2 + Dv*sige**2)*(Bl*tau**2 + Vl*sige**2)   )
+  #print('Loss_hat: ', Bl*tau**2 + Vl*sige**2 )
+  #print('Loss_tilde: ', Bu*tau**2 + Vu*sige**2 )
+  #print('Relative Improvment: ', RelImpv)
+  eta_hat=1-RelImpv
+  #print('Relative Risk(n): ',eta_hat)
+  a_star_Opt=sige**2*Dv/( (Db*tau**2 + Dv*sige**2)   )
+  #print('alpha^star(n): ', a_star_Opt)
+
+
+
+################# Full simulation:
+
+  e=np.zeros( (n,1))
+  Ip=np.eye(p)
+
+  for i in range(Samp_size2):
+    tr_id=rng.choice(range(N),size=n, replace=False)
+    beta=(rng.multivariate_normal(mu,np.eye(p),1).transpose())*tau
+
+    mtes=Xst@beta
+    X = rng.multivariate_normal(mu,Sigma,n) # Xst[tr_id,:]
+    ymeans=X@beta
+
+    e[:,0]=rng.standard_normal(n)
+    y=ymeans+e*sige
+
+    yh_null=np.mean(y)
+
+############# supervised OLS:
+    XXinv=np.linalg.inv(X@(X.transpose()) )
+    beta_OLS=(X.transpose())@XXinv@y
+
+############# Semi-supervised_Tilde:
+    XSigXinv=np.linalg.inv(X@Sigma1_inv@(X.transpose()))
+    beta_SOLS=Sigma1_inv@(X.transpose())@XSigXinv@y
+
+
+    Numer=(y.transpose())@XXinv@XXinv@y  #E3
+    Denom=(XXinv@XXinv).trace()
+    XXinv_tr=XXinv.trace()
+
+    #tau_h=(beta_OLS.transpose())@beta_OLS/SigTr_hat
+
+    tau_h=(beta_OLS.transpose())@Sigma1@beta_OLS/SigTr_hat
+
+
+    for j in range(5):
+      sig_h= ( np.maximum(Numer -tau_h*XXinv_tr  ,0.01) )/( Denom )   #E1
+      tau_h= ( np.maximum( (y**2).mean()- sig_h , 0.01 ) )/(   SigTr_hat   )      #########  ((X.transpose())@X).trace()/n     #
+
+
+    test_tau1[i,nl]=tau_h
+    test_sigs1[i,nl]=sig_h
+
+    ############## alpha_star:
+    a_star=sig_h*Dv/(sig_h*Dv+ tau_h*Db )
+
+    a_star2=sig_h*Dv_inf/(sig_h*Dv_inf+ tau_h*Db_inf )
+
+
+    sig_h_semi= ( np.maximum(Numer -tau*XXinv_tr  ,0.01) )/( Denom )
+    test_sigs_semi[i,nl]=sig_h_semi
+    a_star_semi=sig_h*Dv/(sig_h_semi*Dv+ tau*Db )
+    a_star_semi2=sig_h*Dv_inf/(sig_h_semi*Dv_inf+ tau*Db_inf )
+    #a_star_Opt=(sige**2)*(V-gam)/((sige**2)*(V-gam)+ 1*B  )
+
+    ##############################
+
+    test_sup[i,nl]=np.mean( (Xst@beta_OLS -  mtes)**2 )
+
+    test_Mixed[i,nl]=np.mean( (Xst@(a_star*beta_SOLS+(1-a_star)*beta_OLS) -  mtes)**2 )
+    test_Mixed2[i,nl]=np.mean( (Xst@(a_star2*beta_SOLS+(1-a_star2)*beta_OLS) -  mtes)**2 )
+
+    test_Mixed_semi[i,nl]=np.mean( (Xst@(a_star_semi*beta_SOLS+(1-a_star_semi)*beta_OLS) -  mtes)**2 )
+    test_Mixed_semi2[i,nl]=np.mean( (Xst@(a_star_semi2*beta_SOLS+(1-a_star_semi2)*beta_OLS) -  mtes)**2 )
+
+    test_MixedOpt[i,nl]=np.mean( (Xst@(a_star_Opt*beta_SOLS+(1-a_star_Opt)*beta_OLS) -  mtes)**2 )
+    test_MixedOpt2[i,nl]=np.mean( (Xst@(a_star_Opt_Inf*beta_SOLS+(1-a_star_Opt_Inf)*beta_OLS) -  mtes)**2 )
+
+
+    if i%1000==999:
+      print(i+1,'samples so far')
+
+
+### Plotting
+x2=n_vals
+
+y21=np.mean(test_MixedOpt,0)/np.mean(test_sup,0)
+y22=np.mean(test_MixedOpt2,0)/np.mean(test_sup,0)
+
+y23=np.mean(test_Mixed,0)/np.mean(test_sup,0)
+y24=np.mean(test_Mixed2,0)/np.mean(test_sup,0)
+
+y25= np.mean(test_Mixed_semi,0)/np.mean(test_sup,0)            #np.mean(test_sup-test_Mixed_semi,0)
+y26= np.mean(test_Mixed_semi2,0)/np.mean(test_sup,0)            #np.mean(test_sup-test_Mixed_semi2,0)
+
+
+s1=2
+s2=8.5
+s3=15
+s4=18
+fig= plt.figure(figsize=(15,8))
+
+plt.xticks(fontsize=s3)
+plt.yticks(fontsize=s3)
+plt.ylim((0.7,0.85))
+
+plt.plot(x2,y21,'ro--', linewidth=s1, markersize=s2)
+plt.plot(x2,y25,'x--',color='blue', linewidth=s1, markersize=s2)
+
+plt.plot(x2,y23,'g^--', linewidth=s1, markersize=s2)
+
+plt.axhline(y=eta_hat,linewidth=s1, color='gray', linestyle='dashed')
+plt.axhline(y=eta_inf,linewidth=s1, color='black', linestyle='dotted')
+
+plt.xlabel(r'$n$', fontsize=s4)
+plt.ylabel('Relative prediction error', fontsize=s4)
+plt.legend( [r'$r(\dot{w}_{\alpha^*_w})/r(\hat{w})$', r'$r(\dot{w}_{\hat{\alpha}(\tau)})/r(\hat{w})$', r'$r(\dot{w}_{\hat{\alpha}})/r(\hat{w})$',r'$\widehat{\eta}^w(n=300)$', r'$\eta^w_{\infty}$'],   fontsize=s4)
+
+
+plt.title('Semi Supervised Linear Interpolator,' +r'$\gamma = 2,  \sigma^2=tr(\Sigma)=25$' , fontsize=25 )
+
+
