@@ -1,1 +1,544 @@
+####### Access to CelebA Dataset is Required ############
+######### Run for any instance of 'SETnow' between 0 to 2 and 'Fnum' between 0 to 9 and store the results ###########
+######### Generate plot with seperate code, based on the stored results #############################################
 
+import torch
+import torchvision
+import torchvision.transforms as transforms
+from torchvision.datasets import ImageFolder
+from torch._C import dtype
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
+import torchvision.datasets as dset
+from functools import partial
+import os
+import zipfile
+import gdown
+from natsort import natsorted
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
+import csv
+from collections import namedtuple
+CSV = namedtuple("CSV", ["header", "index", "data"])
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import copy
+from numpy.random import default_rng
+rng = default_rng()
+import pandas as pd
+
+########### General Settings: #############
+SETnow=0   ### between 0 to 2
+Fnum=0    ### between 0 to 9
+############################################
+
+######## Enabling GPU:
+print(torch.cuda.device_count())
+print(torch.cuda.get_device_name(0))
+print(torch.cuda.is_available())
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+# Assuming that we are on a CUDA machine, this should print a CUDA device:
+
+print(device)
+
+## Option#1
+"""
+## Fetch data from Google Drive
+# Root directory for the dataset
+data_root = 'data/celeba'
+# Path to folder with the dataset
+#dataset_folder = f'{data_root}/img_align_celeba'
+# URL for the CelebA dataset
+url = 'https://drive.google.com/uc?id=1cNIac61PSA_LqDFYFUeyaQYekYPc75NH'
+# Path to download the dataset to
+download_path = f'{data_root}/img_align_celeba.zip'
+
+# Create required directories
+if not os.path.exists(data_root):
+  os.makedirs(data_root)
+  #os.makedirs(dataset_folder)
+
+# Download the dataset from google drive
+gdown.download(url, download_path, quiet=False)
+
+# Unzip the downloaded file
+with zipfile.ZipFile(download_path, 'r') as ziphandler:
+  #ziphandler.extractall(dataset_folder)
+  ziphandler.extractall(data_root)
+
+img_folder = f'{data_root}/img_align_celeba'
+targets_folder = f'{data_root}/Targets'
+if not os.path.exists(targets_folder):
+  os.makedirs(targets_folder)
+
+url =' https://drive.google.com/uc?id=1qncP5DdAxMg7MVRFsKXr4BR1V8KhOPPw'
+download_path =f'{targets_folder}/list_landmarks_align_celeba.txt'
+gdown.download(url, download_path, quiet=False)
+"""
+
+## Option#2:
+!pip install --upgrade --no-cache-dir gdown
+!gdown --id 10lb95QoS1cy1GxYZQsLaxu6S-BTEeWSY
+
+# Root directory for the dataset
+data_root = 'data/celeba'
+
+# Path to download the dataset to
+download_path = f'{data_root}/img_align_celeba.zip'
+
+# Create required directories
+if not os.path.exists(data_root):
+  os.makedirs(data_root)
+  #os.makedirs(dataset_folder)
+
+
+with zipfile.ZipFile('/content/img_align_celeba_new1.zip', 'r') as ziphandler:
+  #ziphandler.extractall(dataset_folder)
+  ziphandler.extractall(data_root)
+
+img_folder = f'{data_root}/img_align_celeba'
+targets_folder = f'{data_root}/Targets'
+if not os.path.exists(targets_folder):
+  os.makedirs(targets_folder)
+
+url ='https://drive.google.com/uc?id=1qncP5DdAxMg7MVRFsKXr4BR1V8KhOPPw'
+#url ='https://drive.google.com/file/d/1qncP5DdAxMg7MVRFsKXr4BR1V8KhOPPw/view?usp=sharing'
+download_path =f'{targets_folder}/list_landmarks_align_celeba.txt'
+gdown.download(url, download_path, quiet=False)
+
+## Create a custom Dataset class
+class CelebADataset(Dataset):
+  def __init__(self, root_dir, root_dir_Targets ,transform,N):
+    """
+    Args:
+      root_dir (string): Directory with all the images
+      root_dir_Targets (string): Directory with all the labels
+      transform (callable, optional): transform to be applied to each image sample
+      N - the size of the data set. takes first N images
+    """
+    # Read names of images in the root directory
+    #image_names = os.listdir(root_dir)
+    #self.image_names = natsorted(image_names)
+
+    self.root_dir = root_dir
+    self.root_dir_Targets = root_dir_Targets
+    self.transform = transform
+
+
+    landmarks_align = self._load_csv("list_landmarks_align_celeba.txt", header=1)
+    self.NoseX = landmarks_align.data[0:N,4]
+    self.NoseY = landmarks_align.data[0:N,5]
+    self.image_names = landmarks_align.index[0:N]
+
+
+  def __len__(self):
+    return len(self.image_names)
+
+
+
+  def _load_csv(
+        self,
+        filename ,
+        header ,
+    ) -> CSV:
+        data, indices, headers = [], [], []
+
+        fn = partial(os.path.join, self.root_dir_Targets)
+        with open(fn(filename)) as csv_file:
+            data = list(csv.reader(csv_file, delimiter=' ', skipinitialspace=True))
+
+        if header is not None:
+            headers = data[header]
+            data = data[header + 1:]
+
+        indices = [row[0] for row in data]
+        data = [row[1:] for row in data]
+        data_int = [list(map(int, i)) for i in data]
+
+        return CSV( headers, indices, torch.tensor(data_int) )
+
+
+  def __getitem__(self, idx):
+    # Get the path to the image
+    img_path = os.path.join(self.root_dir, self.image_names[idx])
+    # Load image and convert it to RGB
+    img = Image.open(img_path).convert('RGB')
+    # Apply transformations to the image
+    if self.transform:
+      img = self.transform(img)
+
+    targrt=self.NoseX[idx]
+
+    return img,targrt
+    #image_name=self.image_names[idx]
+    #return img,targrt,image_name
+
+
+
+
+####### Expiriment settings:
+
+nnow_vals=np.array((20000,10000,4000))
+N_vals=np.array((200000,200000,200000))
+batch_size_ssl_vals=np.array((100,100,100))
+batch_size_ssl = batch_size_ssl_vals[SETnow]
+batch_size_ssl =200
+batch_size_test = 200
+nnow= nnow_vals[SETnow]  
+N= N_vals[SETnow] 
+
+Supervised_Epochs_vals=np.array((100,200,400))
+
+########### We want same number of  train and SSL batches:
+batch_size_train = int(batch_size_ssl*nnow/N)
+batch_size_Total = batch_size_ssl+batch_size_train
+
+
+IMG_WIDTH = 178
+IMG_HEIGHT = 218
+
+
+#Net Architecture:
+C1= 32
+C2= 64
+C3=32
+C4=16
+Window_size=5
+Poolong_size=2
+P_Drop=0.5
+H=100
+
+#Training:
+Epochs=Supervised_Epochs_vals[SETnow]
+#Epochs= int(2*10**6/nnow) # 100   #500  #
+k2=int(Epochs/5)   #int(Epochs/10) # Val freq
+
+
+## Load the dataset
+# Path to directory with all the images
+transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+# Load the dataset from file and apply transformations
+celeba_dataset = CelebADataset(img_folder,targets_folder, transform,N)
+
+F_size_Val=10000
+si=Fnum*F_size_Val
+Val_id=range(si,si+F_size_Val)
+test_set=torch.utils.data.Subset(celeba_dataset, Val_id)
+if si+F_size_Val+nnow<=N:
+  tr_id=range(si+F_size_Val,si+F_size_Val+nnow)
+else:
+  tr_id=range(0,nnow)
+
+train_set=torch.utils.data.Subset(celeba_dataset, tr_id)
+SSL_set= torch.utils.data.Subset(celeba_dataset, range(N))
+
+trainloader  = torch.utils.data.DataLoader(train_set, batch_size=batch_size_train, num_workers=2, shuffle=True)
+SSLloader  = torch.utils.data.DataLoader(SSL_set, batch_size=batch_size_ssl, num_workers=2, shuffle=True)
+testloader  = torch.utils.data.DataLoader(test_set, batch_size=batch_size_test, num_workers=2, shuffle=True)
+
+ntr=len(trainloader)*batch_size_train
+nte=len(testloader)*batch_size_test
+nssl=len(SSLloader)*batch_size_ssl
+
+print('Trainnig size: ', ntr )
+print('Unlabeled size: ',nssl )
+print('Validation size: ',nte )
+
+class Net(nn.Module):
+    def __init__(self ,input_shape=(3,IMG_HEIGHT, IMG_WIDTH)):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(3, C1, Window_size)
+        self.conv2 = nn.Conv2d(C1, C2, Window_size)
+        self.conv3 = nn.Conv2d(C2, C3, Window_size)
+        self.conv4 = nn.Conv2d(C3, C4, Window_size)
+        self.pool = nn.MaxPool2d(Poolong_size, Poolong_size)
+
+        n_size = self._get_conv_output(input_shape)
+
+        self.fc1 = nn.Linear(n_size, H)
+        self.fc2 = nn.Linear(H, 1)
+
+        self.dropout = nn.Dropout(P_Drop)
+
+
+    def _get_conv_output(self, shape):
+      input = torch.autograd.Variable(torch.rand(batch_size_train, *shape))
+      output_feat = self._forward_features(input)
+      n_size = output_feat.size(1)
+      return n_size
+
+    def _forward_features(self, x):
+      x = self.pool(F.relu(self.conv1(x)))
+      x = self.pool(F.relu(self.conv2(x)))
+      x = self.pool(F.relu(self.conv3(x)))
+      x = self.pool(F.relu(self.conv4(x)))
+      x = torch.flatten(x, 1)
+      return x
+
+
+    def forward(self, x):
+        x = self._forward_features(x)
+        x=self.dropout(x)
+        x = F.leaky_relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+    def Semi_forward(self, x):
+        x = self._forward_features(x)
+        x = F.leaky_relu(self.fc1(x))
+        return x
+
+
+#### Init:
+net = Net()
+net.to(device)
+criterion = nn.MSELoss()
+
+optimizer = optim.Adam(net.parameters())
+
+ntr=len(trainloader)*batch_size_train
+nte=len(testloader)*batch_size_test
+
+
+######### Trainig:
+for epoch in range(Epochs):  # loop over the dataset multiple times
+    for i, data in enumerate(trainloader, 0):
+      inputs, labels = data
+      inputs=inputs.to(device)
+
+      labels=labels.view(batch_size_train,1).float().to(device)
+      optimizer.zero_grad()
+      outputs = net.forward(inputs)
+      loss = criterion(outputs, labels)
+      loss.backward()
+      optimizer.step()
+
+    if epoch % k2 == k2-1:
+      with torch.no_grad():
+        net.eval()
+
+        OutErr=0
+        for j, data in enumerate(testloader, 0):
+          inputs, labels = data
+          inputs=inputs.to(device)
+          labels=labels.view(batch_size_test,1).float().to(device)
+          outputs = net.forward(inputs)
+          OutErr+=nn.MSELoss(reduction='sum')(outputs, labels,).item()
+
+        OutErr/=(len(testloader)*batch_size_test)
+        print(f'Ephoc {epoch + 1} Completed, Outloss: {OutErr:.3f}')
+
+        net.train()
+
+print('Finished Training')
+
+Working on the last layer
+
+## Creating Rellevant numpy arrays
+XF=np.zeros((ntr,H))
+ytr=np.zeros((ntr,1))
+
+ZF=np.zeros((nssl,H))
+yte=np.zeros((nssl,1))
+
+with torch.no_grad():
+  net.eval()
+  RSS0=0
+  for i, data in enumerate(trainloader, 0):
+    inputs, labels = data
+    inputs=inputs.to(device)
+    labels=labels.view(batch_size_train,1).float().to(device)
+
+    startIndx=i*batch_size_train
+    XF[startIndx:startIndx+batch_size_train,:]=( net.Semi_forward(inputs) ).cpu().detach().numpy()
+    ytr[startIndx:startIndx+batch_size_train,:]=labels.detach().cpu().numpy()
+
+
+
+  for i, data in enumerate(SSLloader, 0):
+    inputs, labels = data
+    inputs=inputs.to(device)
+    labels=labels.view(batch_size_ssl,1).float()
+
+    startIndx=i*batch_size_ssl
+    ZF[startIndx:startIndx+batch_size_ssl,:]=( net.Semi_forward(inputs) ).cpu().detach().numpy()
+    yte[startIndx:startIndx+batch_size_ssl,:]=labels.detach().numpy()
+
+  net.train()
+
+
+### The null model:
+nullP=ytr.mean()
+ZFc=ZF-np.mean(ZF,0) ######Centering the covariaters
+XFc=XF-np.mean(ZF,0)
+
+ZFc/=np.std(ZF,0)
+XFc/=np.std(ZF,0)
+
+
+ytec=yte-nullP    ######Centering the labels
+ytrc=ytr-nullP
+
+beta_hat=np.linalg.inv((XFc.transpose())@XFc )@(XFc.transpose())@ytrc
+
+yh_beta_hat=(ZFc)@beta_hat
+
+pf=XFc.shape[1]
+X_m=np.zeros((pf,1))
+ones_n=np.ones((ntr,1))
+X_m[:,0]=np.mean(XFc,0)
+mean_mat=(ones_n)@(X_m.transpose())
+
+SigmaF = ZFc.T@ZFc/(ZFc.shape[0])
+SigmaF_inv=np.linalg.inv(SigmaF)
+
+
+############# Semi-supervised_Breve:
+cov_Xy=( (XFc-mean_mat).transpose())@(ytrc)/ntr
+beta_brave=SigmaF_inv@cov_Xy
+yh_beta_brave=(ZFc)@beta_brave
+
+
+sig_h= np.sum( (ytr-XFc@beta_hat-nullP)**2)/(ntr-pf-1)
+print('Noise estimator:', sig_h )
+tau_h=np.maximum( (np.var(ytr)-sig_h)/SigmaF.trace() ,0)
+print('Signal estimator:', tau_h )
+
+
+##################### Unsupervised estimation: #############################
+Samp_size=200
+B=0
+V=0
+for i in range(Samp_size):
+  tr_id=rng.choice(range(nssl),size=ntr, replace=False)
+  X = ZFc[tr_id,:]
+  HQ_mat=ntr*SigmaF@np.linalg.inv((X.transpose())@X )
+  V=V+HQ_mat.trace()
+  HH2_mat=(SigmaF_inv/ntr)@(X.T)@X@(X.T)@X-ntr*SigmaF
+  B=B+HH2_mat.trace()
+
+V=V/Samp_size
+print('Vl=',V)
+
+B=(B/Samp_size)
+print('Bu=',B)
+a_star=sig_h*(V-pf)/(sig_h*(V-pf)+ tau_h*B  )
+print('alpha star:',a_star)
+
+
+alpha=a_star
+
+beta_M=(1-alpha)*beta_hat+alpha*beta_brave
+
+yh_beta_M=(ZFc)@beta_M
+
+tau_h2=(beta_hat.T@SigmaF@beta_hat)/SigmaF.trace()
+sig_h2=np.var(ytr)-tau_h*SigmaF.trace()
+print('Noise estimator2:', sig_h2 )
+print('Signal estimator2:', tau_h2 )
+a_star2=sig_h2*(V-pf)/(sig_h2*(V-pf)+ tau_h2*B  )
+print('alpha star2:',a_star2)
+
+################# Init:
+sig_h= np.sum( (ytr-XFc@beta_hat-nullP)**2)/(ntr-pf-1)
+tau_h=np.var(ytr)-sig_h
+VTot_h=np.var(ytr)
+
+RegFac2=a_star2/(1-a_star2)
+
+with torch.no_grad():
+  RegFac2=torch.tensor(RegFac2, dtype=torch.float)
+  RegFac2=RegFac2.to(device)
+
+
+batch_size_toal=batch_size_train+batch_size_ssl
+
+with torch.no_grad():
+  ymean=torch.tensor(nullP, dtype=torch.float)
+  ymeans=torch.zeros( (batch_size_train ,1) )
+  ymeans = (ymeans +ymean).to(device)
+
+  ymeans_te=torch.zeros( (batch_size_ssl ,1) )
+  ymeans_te = (ymeans_te +ymean).to(device)
+
+
+
+lrGlob=1e-4
+lrPr=1e-4  # 3   # *** 4 ***  ### 5 ########################################
+
+##### Init for net1:
+net_tilde1= Net()
+net_tilde1.to(device)
+net_tilde1=copy.deepcopy(net)
+optimizer_tilde1 =  optim.Adam(net_tilde1.parameters(),lr=lrPr)
+net_tilde1.train()
+
+with torch.no_grad():
+  Ones_tr=torch.ones( (batch_size_train ,1) )
+  Ones_tr=Ones_tr.to(device)
+
+Epochs=int(2*10**6/N)
+k2=int(Epochs/5)
+
+print(f'Ephoc {epoch + 1} Completed, Supervised_OutLoss: {OutErr:.3f}')
+
+
+
+######### SSL-Trainig:
+Epochs=10
+for epoch in range(Epochs):  # loop over the dataset multiple times
+    for i, data in enumerate(trainloader, 0):
+      # get the inputs; data is a list of [inputs, labels]
+      inputs, labels = data
+      inputs=inputs.to(device)
+      labels=labels.view(batch_size_train,1).float().to(device)
+
+      optimizer_tilde1.zero_grad()
+
+      inputs_te, labels_te = next(iter(SSLloader ))
+      inputs_te=inputs_te.to(device)
+
+      # step over the Net1:
+      outputs = net_tilde1.forward(inputs)
+      outputs_te = net_tilde1.forward(inputs_te)
+      loss = criterion(outputs, labels)+RegFac2*( criterion(outputs_te, ymeans_te)+criterion(outputs, labels)-  criterion(outputs,Ones_tr*labels.mean() ) )
+      loss.backward()
+      optimizer_tilde1.step()
+
+
+
+    if epoch % k2 == k2-1:
+      with torch.no_grad():
+        net_tilde1.eval()
+        OutErr1=0
+
+        for j, data in enumerate(testloader, 0):
+          inputs, labels = data
+          inputs=inputs.to(device)
+          labels=labels.view(batch_size_test,1).float().to(device)
+
+          ##### evaluating the SSL1
+          outputs = net_tilde1.forward(inputs)
+          OutErr1+=nn.MSELoss(reduction='sum')(outputs, labels,).item()
+
+
+        OutErr1/=nte
+
+        print(f'Ephoc {epoch + 1} Completed, SSL_OutLoss1: {OutErr1:.3f}')
+
+
+        net_tilde1.train()
+
+print('Finished Training')
+
+
+############ Data Saving:
+data = {'Train Size':[ntr] ,'Supervised_OutLoss':[OutErr] ,'SSL_OutLoss':[OutErr1] }
+df = pd.DataFrame(data)
+filename='temp_Fold'+str(Fnum)+'_Setting'+str(SETnow)+'.csv'
+df.to_csv('/content/drive/MyDrive/Results/CelebA/TrendLine_Infer/'+filename)
