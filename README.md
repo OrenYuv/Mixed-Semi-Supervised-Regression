@@ -3,8 +3,6 @@ This repository related to the paper 'Mixed Semi-Supervised Generalized-Linear-R
 
 The repository contains simiulation code and is usuful to replicate the empirical study conducted in the paper.
 
-Each code file produce an associated figure.
-
 
 Access to CelebA dataset (available at https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) is required in order to generate Figure 7.
 
