@@ -72,3 +72,440 @@ inputs_te=inputs_te.to(device)
 labels_te=labels_te.to(device)
 
 
+test_sup_NN=np.empty((Samp_size,n_lev))     #Regular Near-Interpolation net
+test_f_Mixed1=np.empty((Samp_size,n_lev))   # twi stages mixed interoplator
+
+alpha_hats1=np.empty((Samp_size,n_lev))
+alpha_hats2=np.empty((Samp_size,n_lev))
+
+############################ Preperation for RFF:
+
+test_sup=np.empty((Samp_size,n_lev))
+test_semi2=np.empty((Samp_size,n_lev))
+test_Mixed=np.empty((Samp_size,n_lev))
+test_mixed_Breve_ExactEst=np.empty((Samp_size,n_lev))
+
+test_sup_RFF=np.empty((Samp_size,n_lev))
+test_semi_RFF=np.empty((Samp_size,n_lev))
+test_semi_RFF_D=np.empty((Samp_size,n_lev))
+
+# Without intercept:
+Z1=Xte
+Sigma1 = Z1.T@Z1/N
+
+Sigma1_inv=np.linalg.inv(Sigma1)
+
+a=1
+def g(z):
+  return z*(z>0)+(z<0)*a*(np.exp(z/a)-1)
+
+#############################################################
+
+for nl in range(n_lev):      ########## n-Loop
+  ntr=n_vals[nl]
+  ones_n=np.ones((ntr,1))
+  H_mat=Sigma1*ntr
+  H_mat_inv=np.linalg.inv(H_mat)
+  ################ preperation for RFF for ntr:
+  mu=np.zeros(p)
+  Sigma=np.eye(p)
+  Hrff=5*ntr
+  W= rng.multivariate_normal(mu,Sigma,Hrff)
+  Zrff=Xte@(W.transpose())
+  Zrff=np.hstack((  np.tanh(Zrff),   np.exp(Zrff)/( 1+ np.exp(Zrff) ),g(Zrff)  ))
+
+  ########## Scaling Zrff:
+  Zrff-=np.mean(Zrff,0)
+  Zrff/=np.std(Zrff,0)
+
+
+  prff=Zrff.shape[1]
+  I_H=np.eye(prff)
+  Ip=np.eye(p)
+  SigmaRff = Zrff.T@Zrff/N
+  SigmaRff_inv=np.linalg.inv(SigmaRff)
+
+
+  ######## Estimating Vl,Vu,Bl,Bu  and F,U (Via t1 and t2):
+  Vl=0
+  Vu=0
+  Bl=0
+  Bu=0
+  t1=0
+  t2=0
+  Q=np.zeros((p,p))
+  HD=np.zeros((p,p))
+
+  vl=0
+  bu=0
+  step=0.05
+  alpha_vals=np.arange(step,1,step)
+  alpha_lev=alpha_vals.shape[0]
+  Bddot=np.zeros(alpha_lev)
+  Vddot=np.zeros(alpha_lev)
+
+  for l in range(Mid_Samp_size):
+    tr_id=rng.choice(range(N),size=ntr, replace=False)
+    X = Zrff[tr_id,:]
+    mat=X@(X.transpose())
+    rank_mat=np.linalg.matrix_rank(mat)
+    while rank_mat<ntr:
+      tr_id=rng.choice(range(N),size=ntr, replace=False)
+      X = Zrff[tr_id,:]
+      mat=X@(X.transpose())
+      rank_mat=np.linalg.matrix_rank(mat)
+
+    XX_inv=np.linalg.inv(mat )
+    XSigX_inv=np.linalg.inv(X@SigmaRff_inv@(X.transpose()))
+
+    Vu+=XSigX_inv.trace()
+    Vl+=(X@SigmaRff@(X.transpose())@XX_inv@XX_inv).trace()
+
+
+    Bl+=(X@SigmaRff@(X.transpose())@XX_inv).trace()
+    Bu+=(X@(X.transpose())@XSigX_inv).trace()
+
+    ###################### unsupervised estimation for the low-dimention:
+    X = Z1[tr_id,:]
+    mat1=(X.transpose())@X
+    HDt= mat1@H_mat_inv@mat1
+    t1+= (HDt).trace()
+    Qt=np.linalg.inv(mat1 )
+    t2+= (H_mat@Qt).trace()
+    Q+=Qt
+    HD+=HDt
+    HQ_mat=ntr*Sigma1@np.linalg.inv(mat1)
+
+    vl+=HQ_mat.trace()
+    HH2_mat=(Sigma1_inv/ntr)@mat1@mat1-ntr*Sigma1
+    bu+=HH2_mat.trace()
+    Hb=mat1/ntr
+
+    for j in range(alpha_lev):
+      alpha_t=alpha_vals[j]
+      Sa=np.linalg.inv( (1-alpha_t)*Hb + alpha_t*Sigma1)
+      matB=((Sa@Hb-Ip).transpose())@Sigma1@(Sa@Hb-Ip)
+      Bddot[j]+=matB.trace()
+
+      matV=Sigma1@Sa@Hb@Sa
+      Vddot[j]+=matV.trace()
+
+
+  vl/=Samp_size
+  bu/=Samp_size
+  bu_b=(1-1/ntr)*(1-1/(ntr*(p+1)))*bu
+  vu_b=(1-1/ntr)*p
+  Vddot/=Samp_size
+  Bddot/=Samp_size
+
+  VlRff=Vl/Samp_size
+  VuRff=Vu/Samp_size
+  BlRff=Bl/Samp_size
+  BuRff=Bu/Samp_size
+
+  Q=Q/Samp_size
+  HD=HD/Samp_size
+
+
+
+### Simple regression NN p-HL-1:
+  H=15*ntr
+  h=5*ntr
+  class Net(nn.Module):
+      def __init__(self):
+          super(Net, self).__init__()
+          self.fc1 = nn.Linear(p,h)
+          self.fc2 = nn.Linear(h,H)
+          self.fc3 = nn.Linear(H,1, bias=False )  #bias=True
+      def forward(self, x):
+          x = F.relu(self.fc1(x))
+          x = LR_f(self.fc2(x))
+          x = self.fc3(x)
+          return x
+
+ ###### Main Loop
+  for i in range(Samp_size):
+    #tr_id=rng.choice(range(N),size=ntr, replace=False)
+    si=i*F_size
+    tr_id=range(si,si+ntr)
+    Val_id=range(si+ntr,si+F_size)
+    Fold_inputs=Ztr[si:si+F_size,:]
+    ytr=yte[tr_id,:]
+    yval=yte[Val_id,:]
+
+    ### The null model:
+    ymean= np.mean(ytr)
+    nullerr=(yte-ymean)**2
+    #test_null[i,nl]=(nullerr.mean())
+    ytrC=ytr-ymean
+
+    XF =Zrff[tr_id,:]
+    Xtr=Xte[tr_id,:]
+    ########## OLS and SOLS:
+    X1=Xtr
+    mm = X1.T @ X1
+    beta_OLS= np.linalg.inv(mm)@X1.T @ytrC
+    yh_OLS=Z1@beta_OLS+ymean
+    yh_OLS=yh_OLS[Val_id,:]
+    test_sup[i,nl]=np.mean( (yval-yh_OLS)**2)
+
+    ######## Semi-Supervised OLS - Breve:
+    X_m[:,0]=np.mean(X1,0)
+    mean_mat=(ones_n)@(X_m.transpose())
+    cov_Xy=( (X1-mean_mat).transpose())@ytrC/ntr
+    X_m[:,0]=np.mean(Z1,0)
+    beta_SOLS2= Sigma1_inv@(cov_Xy)
+    yh_SOLS2=Z1@beta_SOLS2+ymean
+    yh_SOLS2=yh_SOLS2[Val_id,:]
+    test_semi2[i,nl]=np.mean( (yval-yh_SOLS2)**2)
+    ######## Estimating NSR:
+    RSS= np.sum( (ytrC-X1@beta_OLS)**2)
+    sig_h=RSS/(ntr-p)
+    tau_h= ( np.maximum(  (ytrC**2).mean()- sig_h , 0 ) )/(   Sigma1.trace()   )
+
+    a_star=sig_h*(vl-p)/(sig_h*(vl-p)+ tau_h*bu  )
+    a_star_b=sig_h*(vl-vu_b)/(sig_h*(vl-vu_b)+ tau_h*bu_b  )
+
+    yh_Mixed=a_star*yh_SOLS2+(1-a_star)*yh_OLS
+    test_Mixed[i,nl]=np.mean( (yh_Mixed-yval)**2 )
+
+
+
+    Rvals_h=(sig_h)*Vddot/ntr+tau_h*Bddot
+    alpha_ExactEst =alpha_vals[np.argmin(Rvals_h)]
+
+    beta_mixed_Breve_ExactEst=np.linalg.inv( (1-alpha_ExactEst)*mm/ntr + alpha_ExactEst*Sigma1)@cov_Xy
+    yh_ExactEst=Z1@beta_mixed_Breve_ExactEst+ymean
+    yh_ExactEst=yh_ExactEst[Val_id,:]
+    test_mixed_Breve_ExactEst[i,nl]=np.mean( (yval-yh_ExactEst)**2)
+
+
+    ########### Supervised RFF - Contd: ###########
+    XXinv=np.linalg.inv(XF@(XF.transpose()) )
+    w_hat=(XF.transpose())@XXinv@ytrC
+    yh_w_hat=Zrff@w_hat+ymean
+    yh_w_hat=yh_w_hat[Val_id,:]
+    test_sup_RFF[i,nl]=np.mean( (yval-yh_w_hat)**2)
+    print(test_sup_RFF[i,nl])
+
+    ########### Semi-Supervised RFF:
+    XSigXinv=np.linalg.inv(XF@SigmaRff_inv@(XF.transpose()))
+    w_tilde=SigmaRff_inv@(XF.transpose())@XSigXinv@ytrC
+
+    yh_w_tilde=Zrff@w_tilde+ymean
+    yh_w_tilde=yh_w_tilde[Val_id,:]
+    test_semi_RFF[i,nl]=np.mean( (yval-yh_w_tilde)**2)
+
+
+
+######### Estimating Noise and Signal:
+    Numer=(ytrC.transpose())@XXinv@XXinv@ytrC  #E3
+    Denom=(XXinv@XXinv).trace()              #E2
+    tau_h=(w_hat.transpose())@w_hat/prff
+    for j in range(5):
+      sig_h= ( np.maximum(Numer -tau_h*(XXinv.trace())  ,0) )/( Denom )   #E1
+      tau_h= ( np.maximum( (ytrC**2).mean()- sig_h , 0 ) )/(   SigmaRff.trace()   )
+
+    Alpha_star_h=(sig_h*(VlRff-VuRff))/(sig_h*(VlRff-VuRff)+tau_h*(BlRff-BuRff))
+    print('Alpha_h:',Alpha_star_h)
+    w_D=Alpha_star_h*w_tilde+(1-Alpha_star_h)*w_hat
+
+
+    yh_w_D=Alpha_star_h*yh_w_tilde+(1-Alpha_star_h)*yh_w_hat
+    test_semi_RFF_D[i,nl]=np.mean( (yval-yh_w_D)**2)
+    print(test_semi_RFF_D[i,nl])
+
+
+    ################# Implementing supervised NN:
+    K=2000
+    k=5 ### Checking Frequncy
+    learning_rate=0.007
+    epoch=0
+    net = Net()
+    criterion = nn.MSELoss()
+    optimizer = optim.SGD(net.parameters(), lr=learning_rate)
+    inputs=Ztr[tr_id,:]
+    labels=ydata_tensor[tr_id,:]
+    ymean_torch=labels.mean()
+    labels-=ymean_torch
+
+    ### *Moving to GPU*  ###
+    net.to(device)
+    inputs=inputs.to(device)
+    labels=labels.to(device)
+
+    Int_treshold=0.001
+    insample_loss=np.inf
+
+
+    while epoch<K and insample_loss>Int_treshold:  # loop over the dataset multiple times
+        optimizer.zero_grad()
+        loss = criterion(net(inputs), labels)
+        loss.backward()
+        optimizer.step()
+        insample_loss=loss.item()
+        epoch=epoch+1
+
+    with torch.no_grad():
+      preds=net(inputs_te)
+
+    Vnet=(torch.var(preds)).item()
+    M2_net=((preds**2).mean()).item()
+
+
+    yh_f_hat= preds.cpu().detach().numpy()+ymean
+    yh_f_hat=yh_f_hat[Val_id,:]
+    test_sup_NN[i,nl]=np.mean( (yval-yh_f_hat)**2)
+
+
+    #print(Vnet)
+    print('End Of Supervised Training, InSample-Loss:', format(insample_loss,".3f") ,'   Net-Var: ', format(Vnet,".3f"),'  Net-M2: ',format(M2_net,".3f"), ' Ephocs: ',epoch)
+
+   #################### Optimazing the last Layer ############
+    ZF=(LR_f(net.fc2( F.relu(net.fc1(inputs_te)) )) ).cpu().detach().numpy()
+    pf=ZF.shape[1]
+    ## Scaling ZF:
+    ZF-=np.mean(ZF,0)
+    #ZF/=np.std(ZF,0)
+
+
+    if np.linalg.matrix_rank(ZF)<pf:
+      print('OutLayer detected')
+
+    else:
+      SigmaF = ZF.T@ZF/N
+      SigmaF_inv=np.linalg.inv(SigmaF)
+
+      ######## Estimating Vl,Vu,EB:
+      Vl=0
+      Vu=0
+      Bl=0
+      Bu=0
+
+      for j in range(Mini_Samp_size):
+        tr_id_j=rng.choice(range(N),size=ntr, replace=False)
+        X = ZF[tr_id_j,:]
+        mat=X@(X.transpose())
+        rank_mat=np.linalg.matrix_rank(mat)
+        while rank_mat<ntr:
+          tr_id_j=rng.choice(range(N),size=ntr, replace=False)
+          X = ZF[tr_id_j,:]
+          mat=X@(X.transpose())
+          rank_mat=np.linalg.matrix_rank(mat)
+
+        XX_inv=np.linalg.inv(mat)
+        XSigX_inv=np.linalg.inv(X@SigmaF_inv@(X.transpose()))
+
+        Vu+=XSigX_inv.trace()
+        Vl+=(X@SigmaF@(X.transpose())@XX_inv@XX_inv).trace()
+
+        h_mat= (X.transpose())@XX_inv@X
+        h_Sig_mat= (X.transpose())@XSigX_inv@X
+
+        Bl+=(SigmaF@h_mat).trace()
+        Bu+=h_Sig_mat.trace()
+
+
+      Vl=Vl/Mini_Samp_size
+      Vu=Vu/Mini_Samp_size
+      Bl=Bl/Mini_Samp_size
+      Bu=Bu/Mini_Samp_size
+
+      ########### Supervised RFF: ###########
+      XF = ZF[tr_id,:]
+      XXinv=np.linalg.inv(XF@(XF.transpose()) )
+      w_hat=(XF.transpose())@XXinv@ytrC
+
+      ########### Semi-Supervised RFF:
+      XSigXinv=np.linalg.inv(XF@SigmaF_inv@(XF.transpose()))
+      w_tilde=SigmaF_inv@(XF.transpose())@XSigXinv@ytrC
+
+      #################### Using direct estimation of tau and sigma:
+      tau_h=(w_hat.transpose())@(SigmaF)@w_hat/(SigmaF.trace())
+      sig_h=np.maximum( np.var(ytrC)-tau_h*(SigmaF.trace()) ,0)
+
+      Alpha_star_h=(sig_h*(Vl-Vu))/(sig_h*(Vl-Vu)+ tau_h*(Bl-Bu)  )
+      alpha_hats1[i,nl]=Alpha_star_h
+
+      V_min=(w_tilde.transpose())@(SigmaF)@w_tilde
+
+      print('Min-Var: ', format(V_min[0,0],".3f") )
+
+      ############################## Semi-Supervised Optimization up to stopping crits - Min-Var-Net
+      net_tilde= Net()
+      lamda_tilde=torch.zeros(ntr,requires_grad=True)
+      learning_fac=4
+    ## *Moving to GPU*
+      net_tilde.to(device)
+      lamda_tilde=lamda_tilde.to(device)
+      #learning_fac.to(device)
+      net_tilde=copy.deepcopy(net)
+      optimizer_tilde = optim.SGD(net_tilde.parameters(), lr=learning_rate)
+
+      while  M2_net>V_min+Int_treshold and epoch<3*K:     # Vnet>...
+          optimizer_tilde.zero_grad()
+          fs_tilde=net_tilde(inputs)
+          fu_tilde=net_tilde(inputs_te)
+          with torch.no_grad():  ###### Updating Lambda "manually":
+              lamda_tilde=lamda_tilde+2*learning_rate*(fs_tilde.view(ntr)-labels.view(ntr))/learning_fac
+              insample_loss_tilde=criterion(fs_tilde, labels).item()
+              Vnet=(torch.var(fu_tilde)).item()
+              M2_net=((fu_tilde**2).mean()).item()
+
+          Loss_tilde= ( (fu_tilde**2).mean()+torch.dot(lamda_tilde.view(ntr),fs_tilde.view(ntr)) )/learning_fac
+          Loss_tilde.backward()
+          optimizer_tilde.step()
+          epoch=epoch+1
+
+      with torch.no_grad():
+        preds=net_tilde(inputs_te)
+
+      print('End Of Semi-Supervised Training, InSample-Loss:', format(insample_loss_tilde,".3f") ,'   Net-Var: ', format(Vnet,".3f"),'  Net-M2: ',format(M2_net,".3f"), ' Ephocs: ',epoch)
+
+      #################### Optimazing the last Layer ":"Again"  ############
+      ZF=(LR_f(net_tilde.fc2( F.relu(net_tilde.fc1(inputs_te)) )) ).cpu().detach().numpy()
+      pf=ZF.shape[1]
+      ## Scaling ZF:
+      ZF-=np.mean(ZF,0)
+      SigmaF = ZF.T@ZF/N
+      SigmaF_inv=np.linalg.inv(SigmaF)
+      XF = ZF[tr_id,:]
+
+      ########### Semi-Supervised RFF:
+      XSigXinv=np.linalg.inv(XF@SigmaF_inv@(XF.transpose()))
+      w_tilde=SigmaF_inv@(XF.transpose())@XSigXinv@ytrC
+      yh_w_tilde2=ZF@w_tilde+ymean
+      yh_w_tilde2=yh_w_tilde2[Val_id,:]
+
+      yh_f_M=Alpha_star_h*yh_w_tilde2+(1-Alpha_star_h)*yh_f_hat
+      test_f_Mixed1[i,nl]=np.mean( (yval-yh_f_M)**2)
+
+      V_min=(w_tilde.transpose())@(SigmaF)@w_tilde
+
+      print('Min-Var2: ', format(V_min[0,0],".3f") )
+
+
+
+    print(i)
+  print('finished: ',ntr) #End of Main Loop
+
+################## Data-Saving:
+x2=n_vals
+
+y11=np.mean(test_sup,0)
+y12= np.mean(test_semi2,0)
+y13=np.mean(test_Mixed,0)
+y14=np.mean(test_mixed_Breve_ExactEst,0)
+
+y21=np.mean(test_sup_RFF,0)
+y22= np.mean(test_semi_RFF,0)
+y23= np.mean(test_semi_RFF_D,0)
+
+y31=np.mean(test_sup_NN,0)  #Regular Near-interpolation net
+y32=np.mean(test_f_Mixed1,0)  # Mixed-Interpolator between f_hat and w_tilde2 (of f_tilde)
+
+
+############ Data Saving:
+data=np.stack((x2,y11,y12,y13,y14,y21,y22,y23,y31,y32))
+np.savetxt('/content/drive/MyDrive/Results/Semi_Supervised_OLS_RFF_DNN_Netflix_20Folds.csv', data , delimiter=",")
+
