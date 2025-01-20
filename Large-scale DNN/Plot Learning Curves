@@ -1,0 +1,66 @@
+import matplotlib.pyplot as plt
+import torch
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import glob
+from scipy.stats import t
+import seaborn as sns
+from datetime import datetime
+from scipy.stats import skew
+import functools
+
+
+########### Import the data from the stored results:
+df = pd.concat(map(functools.partial(pd.read_csv), glob.glob('/content/drive/MyDrive/Results/CelebA/TrendLine_Infer/*.csv')))
+
+n_vals=np.array([4000,10000,20000])
+Resutls=np.empty((len(n_vals),6))
+for i in range(len(n_vals)):
+  n=n_vals[i]
+  dfTemp=df[df['Train Size']==n]
+  Resutls[i,0]=n
+  ns=len(dfTemp)
+  print(ns)
+
+  x=dfTemp.Supervised_OutLoss
+  y=dfTemp.SSL_OutLoss
+  d=x-y
+  Resutls[i,1]=x.mean()
+  Resutls[i,2]=y.mean()
+  Resutls[i,3]=d.mean()
+  Resutls[i,4]=d.mean()-t.ppf(0.975,ns-1)*np.sqrt(d.var()/ns)
+  Resutls[i,5]=d.mean()+t.ppf(0.975,ns-1)*np.sqrt(d.var()/ns)
+
+
+df_summary=pd.DataFrame(Resutls,columns=['ntr','Supervised_OutLoss_mean','SSL_OutLoss1_mean','Diff_mean','Diff_Low','Diff_High'])
+
+
+
+plt.figure(figsize=(12,8))
+s2=9
+s3=7
+#plt.scatter(x=df_summary.ntr,y=df_summary.Supervised_OutLoss_mean,s=100,zorder=3)
+plt.plot(df_summary.ntr,df_summary.Supervised_OutLoss_mean,'rs--', markersize=s2)
+plt.plot(df_summary.ntr,df_summary.SSL_OutLoss1_mean,'b^--', markersize=s2)
+plt.plot(df_summary.ntr,df_summary.Diff_mean,'o--',color='black', markersize=s3)
+
+
+
+plt.scatter(x=df_summary.ntr,y=df_summary.Diff_Low,color='black',marker="_",s=100)
+plt.scatter(x=df_summary.ntr,y=df_summary.Diff_High,color='black',marker="_",s=100)
+plt.vlines(x=df_summary.ntr, ymin=df_summary.Diff_Low, ymax=df_summary.Diff_High, colors='black', ls='-', lw=2)
+
+
+
+plt.xlabel(r'$n$', fontsize=18)
+plt.ylabel('prediction MSE', fontsize=18)
+plt.title('Mixed-Semi-Supervised DL on CelebA data', fontsize=18 )
+plt.legend( [r'$R(\hat{f})$', r'$R(\ddot{f}_{\hat{\alpha}})$',r'$R(\hat{f})-R(\ddot{f}_{\hat{\alpha}})$'],   fontsize=20)
+
+
+plt.ylim((0,9))
+plt.xlim((3000,21000))
+plt.show()
+
+
