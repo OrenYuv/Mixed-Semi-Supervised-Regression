@@ -1,6 +1,6 @@
 ####### Access to CelebA Dataset is Required ############
 ######### Run for any instance of 'SETnow' between 0 to 2 and 'Fnum' between 0 to 9 and store the results ###########
-######### Generate plot with seperate code, based on the stored results #############################################
+######### Generate the plot with the code in the file 'Figure 7 - Mixed-Semi-Supervised DL on CelebA data', based on the stored results #############################################
 
 import torch
 import torchvision
